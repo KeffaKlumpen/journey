@@ -1,22 +1,30 @@
 import { type Action } from "../../game/card-data";
 
 type HandProps = {
-    cards: Action[]
-}
-function Hand({ cards }: HandProps) {
+    cards: Action[];
+    onCardClick?: (card: Action, index: number) => void;
+};
+
+function Hand({ cards, onCardClick }: HandProps) {
     return (
         <div className="hand">
-            {cards.map((c) => (
-                <HandCard card={c} key={c} />
+            {cards.map((card, index) => (
+                <HandCard card={card} key={card} onClick={onCardClick ? () => onCardClick(card, index) : undefined} />
             ))}
         </div>
     )
 }
-function HandCard({ card }: { card: Action }) {
+
+type HandCardProps = {
+    card: Action;
+    onClick?: () => void;
+};
+
+function HandCard({ card, onClick }: HandCardProps) {
     return (
-        <div className="actionCard">
+        <button className="actionCard" onClick={onClick} disabled={!onClick}>
             <p>{card}</p>
-        </div>
+        </button>
     );
 }
 

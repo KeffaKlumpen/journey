@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { usePeer } from "../../net/peer-context";
+import CardPopup from "../components/CardPopup";
 import EncounterCard from "../components/EncounterCard";
 import Hand from "../components/Hand";
 import PlayerList from "../components/PlayerList";
@@ -9,6 +10,7 @@ import "./game.css";
 function GamePage() {
     const { gameState, players, peerId, hostId, subscribe } = usePeer();
     const navigate = useNavigate();
+    const [selectedCard, setSelectedCard] = useState<string | null>(null);
 
     useEffect(() => {
         if (!gameState) {
@@ -35,8 +37,11 @@ function GamePage() {
             </aside>
             <main className="game-board">
                 <EncounterCard encounter={encounter}></EncounterCard>
-                <Hand cards={gameState.hand}></Hand >
+                <Hand cards={gameState.hand} onCardClick={(card) => setSelectedCard(card)}></Hand >
             </main>
+            {selectedCard && (
+                <CardPopup card={selectedCard} onClose={() => setSelectedCard(null)} />
+            )}
         </div>
     )
 }

@@ -12,6 +12,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
+
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.actionCard:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-bg);
 }
 
 .encounter {
@@ -19,5 +29,6 @@
 }
 .encounter>img {
   aspect-ratio: 16 / 9;
-  height: 40vh;
+  height: 15vh;
+  padding-top: 5vh;
 }

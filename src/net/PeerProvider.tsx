@@ -7,7 +7,7 @@ import {
 } from "react";
 import { Peer, type DataConnection } from "peerjs";
 import { useNavigate, useSearchParams } from "react-router";
-import { createGameState } from "../game/game-state";
+import { createEncounters, createGameState, createHand } from "../game/game-state";
 import { isLobbyMessage, type LobbyMessage, type Player } from "./messages";
 import { PeerContext, type PeerContextValue, type Role, type Status } from "./peer-context";
 
@@ -235,13 +235,22 @@ export function PeerProvider({ children }: { children: ReactNode }) {
 
     const startGame = useCallback(() => {
         if (roleRef.current !== "host") return;
-        const game = createGameState();
+        const drawnEncounters = createEncounters();
+        const hands = new Map(playersRef.current.map((player) => [player.id, createHand()]));
+        const ownHand = hands.get(peerRef.current?.id ?? "")!;
+
+        // Each player gets their own hand; the encounters are shared.
+        for (const [id, connection] of connectionsRef.current) {
+            const game = createGameState(hands.get(id)!, drawnEncounters);
+            send(connection, { type: "start-game", game });
+        }
+
+        const game = createGameState(ownHand, drawnEncounters);
         const message: LobbyMessage = { type: "start-game", game };
-        broadcast(message);
         setGameState(game);
         dispatch(message);
         navigateRef.current("/game");
-    }, [broadcast, dispatch]);
+    }, [dispatch, send]);
 
     const leaveLobby = useCallback(() => {
         leavingRef.current = true;

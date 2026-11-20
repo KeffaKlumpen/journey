@@ -15,10 +15,21 @@ function shuffle<T>(items: readonly T[]): T[] {
     return shuffled;
 }
 
-export function createGameState(): GameState {
+export function createHand(): Action[] {
+    return shuffle(actions).slice(0, 5);
+}
+
+export function createEncounters(): Encounter[] {
+    return shuffle(encounters).slice(0, 5);
+}
+
+export function createGameState(
+    hand: Action[],
+    drawnEncounters: Encounter[]
+): GameState {
     return {
-        hand: shuffle(actions).slice(0, 5),
-        encounters: shuffle(encounters).slice(0, 5),
+        hand,
+        encounters: drawnEncounters,
         currentEncounterIndex: 0,
     };
 }
