@@ -1,17 +1,35 @@
-import { useState } from "react";
-import { actions, encounters as availableEncounters } from "../../game/card-data";
+import { useEffect } from "react";
+import { useNavigate } from "react-router";
+import { usePeer } from "../../net/peer-context";
 import EncounterCard from "../components/EncounterCard";
 import Hand from "../components/Hand";
 
 function GamePage() {
-    const [hand] = useState(actions.sort((_a, _b) => Math.random() - 0.5).slice(0, 5))
-    const [encounters] = useState(availableEncounters.sort((_a, _b) => Math.random() - 0.5).slice(0, 5));
-    const [currentEncounter] = useState(encounters[0])
+    const { gameState, subscribe } = usePeer();
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        if (!gameState) {
+            navigate("/", { replace: true });
+        }
+    }, [gameState, navigate]);
+
+    useEffect(() => subscribe((message) => {
+        if (message.type === "game-data") {
+            console.log("Game data received", message.payload);
+        }
+    }), [subscribe]);
+
+    if (!gameState) {
+        return null;
+    }
+
+    const encounter = gameState.encounters[gameState.currentEncounterIndex];
 
     return (
         <div>
-            <EncounterCard encounter={currentEncounter}></EncounterCard>
-            <Hand cards={hand}></Hand >
+            <EncounterCard encounter={encounter}></EncounterCard>
+            <Hand cards={gameState.hand}></Hand >
         </div>
     )
 }

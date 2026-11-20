@@ -1,44 +1,35 @@
-import { Peer } from "peerjs"
 import './lobby.css'
-import { useEffect, useRef, useState } from "react";
+import { usePeer } from '../../net/peer-context';
 
 function LobbyPage() {
-    const [peerId, setPeerId] = useState<string | undefined>(undefined);
-    const [connStatus, setConnStatus] = useState<"disconnected" | "connected">("disconnected")
-    const peerInstance = useRef<Peer>(null);
-    useEffect(() => {
-        const peer = new Peer({
-            config: {
-                iceServers: [
-                    {
-                        urls: 'stun:stun.l.google.com:19302'
-                    },
-                    {
-                        urls: 'turn:free.expressturn.com:3478',
-                        username: '000000002108492650',
-                        credential: 'pGblr6Sgj6o6mLOJjl9QckoJlWY=',
-                    }
-                ],
-                debug: 3
-            }
-        });
-
-        console.log("Created peer obj");
-
-        peer.on('open', (id) => {
-            console.log("peer opened");
-            setPeerId(id)
-            setConnStatus("connected");
-        });
-        peer.on('close', () => setConnStatus("disconnected"));
-        peerInstance.current = peer;
-    }, [])
+    const { status, peerId, role, players, hostId, error, startGame, leaveLobby } = usePeer();
+    const isHost = role === 'host';
 
     return (
         <div>
-            Status: {connStatus}
-            {peerId ? <p>{peerId}</p> : "Connecting..."}
-            Lets find some people!
+            <p>Status: {status}</p>
+            {error && <p className="error">{error}</p>}
+            {peerId ? (
+                <div>
+                    <p>Your peer ID: {peerId}</p>
+                    {isHost && <p>Share this ID with the players you want to invite.</p>}
+                </div>
+            ) : <p>Connecting...</p>}
+            {!isHost && hostId && <p>Joining lobby: {hostId}</p>}
+
+            <h2>Players</h2>
+            <ul>
+                {players.map((player) => (
+                    <li key={player.id}>
+                        {player.id}
+                        {player.id === peerId ? ' (you)' : ''}
+                        {player.id === hostId ? ' (host)' : ''}
+                    </li>
+                ))}
+            </ul>
+
+            {isHost && <button onClick={startGame}>Start game</button>}
+            <button onClick={leaveLobby}>{isHost ? 'Close lobby' : 'Leave lobby'}</button>
         </div>
     )
 }

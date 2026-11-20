@@ -11,7 +11,7 @@ function EncounterCard({ encounter, background }: EncounterProps) {
             <img src={background ?? fallback} />
             <h3>{encounter.title}</h3>
             {encounter.prompts.map((prompt) => (
-                <p className='prompt'>{prompt}</p>
+                <p className='prompt' key={prompt}>{prompt}</p>
             ))}
             {encounter.flavor && <p className='flavor'>{encounter.flavor}</p>}
         </div>

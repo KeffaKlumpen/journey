@@ -7,7 +7,7 @@ function Hand({ cards }: HandProps) {
     return (
         <div className="hand">
             {cards.map((c) => (
-                <HandCard card={c} />
+                <HandCard card={c} key={c} />
             ))}
         </div>
     )
