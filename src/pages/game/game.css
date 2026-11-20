@@ -109,3 +109,15 @@
   font: inherit;
   cursor: pointer;
 }
+
+.vote-options {
+  display: flex;
+  justify-content: center;
+  gap: 0.5vw;
+  flex-wrap: wrap;
+}
+
+.popup-status {
+  font-size: 0.5rem;
+  color: var(--text);
+}

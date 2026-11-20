@@ -1,31 +1,35 @@
-import { useEffect } from "react";
+import { VOTE_OPTIONS, type VoteOption } from "../../net/messages";
 
 type CardPopupProps = {
     card: string;
-    onClose: () => void;
+    isProposer: boolean;
+    votesReceived: number;
+    totalVoters: number;
+    onVote: (vote: VoteOption) => void;
 };
 
-function CardPopup({ card, onClose }: CardPopupProps) {
-    useEffect(() => {
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key === "Escape") onClose();
-        };
-        window.addEventListener("keydown", onKeyDown);
-        return () => window.removeEventListener("keydown", onKeyDown);
-    }, [onClose]);
-
+function CardPopup({ card, isProposer, votesReceived, totalVoters, onVote }: CardPopupProps) {
     return (
-        <div className="popup-backdrop" onClick={onClose}>
+        <div className="popup-backdrop">
             <div
                 className="card-popup"
                 role="dialog"
                 aria-modal="true"
                 aria-label={`Action card: ${card}`}
-                onClick={(event) => event.stopPropagation()}
             >
-                <p className="popup-label">Action card</p>
+                <p className="popup-label">
+                    {isProposer ? "You proposed an action" : "Is this a good idea?"}
+                </p>
                 <h2 className="popup-title">{card}</h2>
-                <button onClick={onClose}>Close</button>
+                {isProposer ? (
+                    <p className="popup-status">Waiting for votes... ({votesReceived}/{totalVoters})</p>
+                ) : (
+                    <div className="vote-options">
+                        {VOTE_OPTIONS.map((option) => (
+                            <button key={option} onClick={() => onVote(option)}>{option}</button>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     )

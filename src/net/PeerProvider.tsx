@@ -8,7 +8,7 @@ import {
 import { Peer, type DataConnection } from "peerjs";
 import { useNavigate, useSearchParams } from "react-router";
 import { createEncounters, createGameState, createHand } from "../game/game-state";
-import { isLobbyMessage, type LobbyMessage, type Player } from "./messages";
+import { isLobbyMessage, type GameDataPayload, type LobbyMessage, type Player } from "./messages";
 import { PeerContext, type PeerContextValue, type Role, type Status } from "./peer-context";
 
 export function PeerProvider({ children }: { children: ReactNode }) {
@@ -276,7 +276,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         };
     }, []);
 
-    const sendGameData = useCallback((payload: unknown) => {
+    const sendGameData = useCallback((payload: GameDataPayload) => {
         const message: LobbyMessage = { type: "game-data", payload };
         broadcast(message);
         dispatch(message);

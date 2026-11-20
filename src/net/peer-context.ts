@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import type { GameState } from "../game/game-state";
-import type { LobbyMessage, Player } from "./messages";
+import type { GameDataPayload, LobbyMessage, Player } from "./messages";
 
 export type Status = "connecting" | "connected" | "disconnected" | "error";
 export type Role = "host" | "guest" | null;
@@ -16,7 +16,7 @@ export type PeerContextValue = {
     startGame: () => void;
     leaveLobby: () => void;
     subscribe: (handler: (message: LobbyMessage) => void) => () => void;
-    sendGameData: (payload: unknown) => void;
+    sendGameData: (payload: GameDataPayload) => void;
 };
 
 export const PeerContext = createContext<PeerContextValue | null>(null);
