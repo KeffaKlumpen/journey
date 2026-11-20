@@ -121,3 +121,10 @@
   font-size: 0.5rem;
   color: var(--text);
 }
+
+.result-value {
+  margin: 1vh 0 3vh;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--accent);
+}

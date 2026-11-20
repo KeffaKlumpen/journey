@@ -10,7 +10,8 @@ export type VoteOption = typeof VOTE_OPTIONS[number];
 
 export type GameDataPayload =
     | { kind: "card-proposal"; proposalId: string; proposerId: string; card: Action }
-    | { kind: "card-vote"; proposalId: string; voterId: string; vote: VoteOption };
+    | { kind: "card-vote"; proposalId: string; voterId: string; vote: VoteOption }
+    | { kind: "vote-result"; proposalId: string; card: Action; result: VoteOption };
 
 export type LobbyMessage =
     | { type: "join"; player: Player }
@@ -32,5 +33,5 @@ export function isLobbyMessage(value: unknown): value is LobbyMessage {
 export function isGameDataPayload(value: unknown): value is GameDataPayload {
     if (typeof value !== "object" || value === null || !("kind" in value)) return false;
     const kind = (value as { kind: unknown }).kind;
-    return kind === "card-proposal" || kind === "card-vote";
+    return kind === "card-proposal" || kind === "card-vote" || kind === "vote-result";
 }
