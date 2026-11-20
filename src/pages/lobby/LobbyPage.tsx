@@ -1,5 +1,6 @@
 import './lobby.css'
 import { usePeer } from '../../net/peer-context';
+import PlayerList from '../components/PlayerList';
 
 function LobbyPage() {
     const { status, peerId, role, players, hostId, error, startGame, leaveLobby } = usePeer();
@@ -17,16 +18,9 @@ function LobbyPage() {
             ) : <p>Connecting...</p>}
             {!isHost && hostId && <p>Joining lobby: {hostId}</p>}
 
-            <h2>Players</h2>
-            <ul>
-                {players.map((player) => (
-                    <li key={player.id}>
-                        {player.id}
-                        {player.id === peerId ? ' (you)' : ''}
-                        {player.id === hostId ? ' (host)' : ''}
-                    </li>
-                ))}
-            </ul>
+            <div style={{width: "20vw"}}>
+                <PlayerList players={players} peerId={peerId} hostId={hostId} />
+            </div>
 
             {isHost && <button onClick={startGame}>Start game</button>}
             <button onClick={leaveLobby}>{isHost ? 'Close lobby' : 'Leave lobby'}</button>
