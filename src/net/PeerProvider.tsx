@@ -7,7 +7,7 @@ import {
 } from "react";
 import { Peer, type DataConnection } from "peerjs";
 import { useNavigate, useSearchParams } from "react-router";
-import { createEncounters, createGameState, createHand } from "../game/game-state";
+import { createEncounters, createGameState, createHand, type GameState } from "../game/game-state";
 import { isLobbyMessage, type GameDataPayload, type LobbyMessage, type Player } from "./messages";
 import { PeerContext, type PeerContextValue, type Role, type Status } from "./peer-context";
 
@@ -65,6 +65,10 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             hostId: peerRef.current?.id ?? "",
         });
     }, [broadcast]);
+
+    const applyGameProgress = useCallback((progress: Pick<GameState, "successes" | "currentEncounterIndex">) => {
+        setGameState((current) => current ? { ...current, ...progress } : current);
+    }, []);
 
     useEffect(() => {
         let disposed = false;
@@ -290,6 +294,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         hostId,
         error,
         gameState,
+        applyGameProgress,
         startGame,
         leaveLobby,
         subscribe,

@@ -11,7 +11,20 @@ export type VoteOption = typeof VOTE_OPTIONS[number];
 export type GameDataPayload =
     | { kind: "card-proposal"; proposalId: string; proposerId: string; card: Action }
     | { kind: "card-vote"; proposalId: string; voterId: string; vote: VoteOption }
-    | { kind: "vote-result"; proposalId: string; card: Action; result: VoteOption };
+    | { kind: "vote-result"; proposalId: string; proposerId: string; card: Action; result: VoteOption }
+    | { kind: "roll-request"; proposalId: string; proposerId: string }
+    | {
+        kind: "dice-result";
+        proposalId: string;
+        proposerId: string;
+        card: Action;
+        result: VoteOption;
+        dice: number[];
+        gained: number;
+        successes: number;
+        currentEncounterIndex: number;
+        gameOver: boolean;
+    };
 
 export type LobbyMessage =
     | { type: "join"; player: Player }
@@ -33,5 +46,11 @@ export function isLobbyMessage(value: unknown): value is LobbyMessage {
 export function isGameDataPayload(value: unknown): value is GameDataPayload {
     if (typeof value !== "object" || value === null || !("kind" in value)) return false;
     const kind = (value as { kind: unknown }).kind;
-    return kind === "card-proposal" || kind === "card-vote" || kind === "vote-result";
+    return (
+        kind === "card-proposal" ||
+        kind === "card-vote" ||
+        kind === "vote-result" ||
+        kind === "roll-request" ||
+        kind === "dice-result"
+    );
 }

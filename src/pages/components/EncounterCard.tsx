@@ -3,9 +3,10 @@ import { type Encounter } from '../../game/card-data';
 
 type EncounterProps = {
     encounter: Encounter
+    successes: number
     background?: string
 }
-function EncounterCard({ encounter, background }: EncounterProps) {
+function EncounterCard({ encounter, successes, background }: EncounterProps) {
     return (
         <div className='encounter'>
             <img src={background ?? fallback} />
@@ -14,6 +15,11 @@ function EncounterCard({ encounter, background }: EncounterProps) {
                 <p className='prompt' key={prompt}>{prompt}</p>
             ))}
             {encounter.flavor && <p className='flavor'>{encounter.flavor}</p>}
+            <p className="successes" aria-label={`${successes} of 3 successes`}>
+                {[0, 1, 2].map((index) => (
+                    <span key={index} className={index < successes ? "success" : undefined}>●</span>
+                ))}
+            </p>
         </div>
     )
 }

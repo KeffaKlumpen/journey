@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
+import { DICE_COUNT, resolveEncounter, rollDice } from "../../game/rules";
 import { usePeer } from "../../net/peer-context";
 import {
     isGameDataPayload,
@@ -11,7 +12,8 @@ import CardPopup from "../components/CardPopup";
 import EncounterCard from "../components/EncounterCard";
 import Hand from "../components/Hand";
 import PlayerList from "../components/PlayerList";
-import ResultPopup from "../components/ResultPopup";
+import ResultPopup, { type DiceRoll } from "../components/ResultPopup";
+import GameOverPopup from "../components/GameOverPopup";
 import "./game.css";
 
 type Proposal = {
@@ -26,9 +28,12 @@ type Vote = {
     vote: VoteOption;
 };
 
-type Result = {
-    card: string;
+type PendingRoll = Proposal & {
     result: VoteOption;
+};
+
+type Result = PendingRoll & {
+    roll?: DiceRoll & { gameOver: boolean };
 };
 
 const VOTE_VALUES: Record<VoteOption, number> = {
@@ -46,21 +51,29 @@ function decideResult(votes: Vote[]): VoteOption {
 }
 
 function GamePage() {
-    const { gameState, players, peerId, hostId, role, subscribe, sendGameData } = usePeer();
+    const { gameState, players, peerId, hostId, role, subscribe, sendGameData, applyGameProgress } = usePeer();
     const navigate = useNavigate();
     const [proposal, setProposal] = useState<Proposal | null>(null);
     const [votes, setVotes] = useState<Vote[]>([]);
     const [hasVoted, setHasVoted] = useState(false);
     const [result, setResult] = useState<Result | null>(null);
+    const [rollRequested, setRollRequested] = useState(false);
 
     const proposalRef = useRef<Proposal | null>(null);
     const votesRef = useRef<Vote[]>([]);
     const hasVotedRef = useRef(false);
+    const pendingRollRef = useRef<PendingRoll | null>(null);
+    const rollRequestedRef = useRef(false);
     const playersRef = useRef<Player[]>(players);
+    const gameStateRef = useRef(gameState);
 
     useEffect(() => {
         playersRef.current = players;
     }, [players]);
+
+    useEffect(() => {
+        gameStateRef.current = gameState;
+    }, [gameState]);
 
     useEffect(() => {
         if (!gameState) {
@@ -77,12 +90,19 @@ function GamePage() {
         setHasVoted(false);
     };
 
+    const resetRoll = () => {
+        rollRequestedRef.current = false;
+        setRollRequested(false);
+    };
+
     useEffect(() => subscribe((message) => {
         if (message.type !== "game-data" || !isGameDataPayload(message.payload)) return;
         const payload = message.payload;
 
         if (payload.kind === "card-proposal") {
             if (proposalRef.current) return;
+            pendingRollRef.current = null;
+            resetRoll();
             const next: Proposal = {
                 id: payload.proposalId,
                 proposerId: payload.proposerId,
@@ -120,12 +140,21 @@ function GamePage() {
                 .map((vote) => vote.voterId));
             if (others.length === 0 || others.every((player) => voters.has(player.id))) {
                 const outcome = decideResult(next.filter((vote) => vote.proposalId === current.id));
-                clearProposal();
-                sendGameData({
-                    kind: "vote-result",
-                    proposalId: current.id,
+                const pending: PendingRoll = {
+                    id: current.id,
+                    proposerId: current.proposerId,
                     card: current.card,
                     result: outcome,
+                };
+                pendingRollRef.current = pending;
+                clearProposal();
+                resetRoll();
+                sendGameData({
+                    kind: "vote-result",
+                    proposalId: pending.id,
+                    proposerId: pending.proposerId,
+                    card: pending.card,
+                    result: pending.result,
                 });
             }
             return;
@@ -133,15 +162,91 @@ function GamePage() {
 
         if (payload.kind === "vote-result") {
             clearProposal();
-            setResult({ card: payload.card, result: payload.result });
+            resetRoll();
+            setResult({
+                id: payload.proposalId,
+                proposerId: payload.proposerId,
+                card: payload.card,
+                result: payload.result,
+            });
+            return;
         }
-    }), [subscribe, role, sendGameData]);
+
+        if (payload.kind === "roll-request") {
+            if (role !== "host") return;
+            const pending = pendingRollRef.current;
+            if (!pending || pending.id !== payload.proposalId || pending.proposerId !== payload.proposerId) return;
+            const game = gameStateRef.current;
+            if (!game) return;
+
+            pendingRollRef.current = null;
+            const dice = rollDice(DICE_COUNT[pending.result]);
+            const resolution = resolveEncounter(
+                game.successes,
+                dice,
+                game.currentEncounterIndex,
+                game.encounters.length
+            );
+            gameStateRef.current = {
+                ...game,
+                successes: resolution.successes,
+                currentEncounterIndex: resolution.currentEncounterIndex,
+            };
+            applyGameProgress({
+                successes: resolution.successes,
+                currentEncounterIndex: resolution.currentEncounterIndex,
+            });
+            sendGameData({
+                kind: "dice-result",
+                proposalId: pending.id,
+                proposerId: pending.proposerId,
+                card: pending.card,
+                result: pending.result,
+                dice,
+                gained: resolution.gained,
+                successes: resolution.successes,
+                currentEncounterIndex: resolution.currentEncounterIndex,
+                gameOver: resolution.gameOver,
+            });
+            return;
+        }
+
+        if (payload.kind === "dice-result") {
+            const currentGame = gameStateRef.current;
+            if (currentGame) {
+                gameStateRef.current = {
+                    ...currentGame,
+                    successes: payload.successes,
+                    currentEncounterIndex: payload.currentEncounterIndex,
+                };
+            }
+            applyGameProgress({
+                successes: payload.successes,
+                currentEncounterIndex: payload.currentEncounterIndex,
+            });
+            resetRoll();
+            setResult({
+                id: payload.proposalId,
+                proposerId: payload.proposerId,
+                card: payload.card,
+                result: payload.result,
+                roll: {
+                    dice: payload.dice,
+                    gained: payload.gained,
+                    successes: payload.successes,
+                    gameOver: payload.gameOver,
+                },
+            });
+        }
+    }), [subscribe, role, sendGameData, applyGameProgress]);
 
     const handleCardClick = (card: string) => {
         if (proposalRef.current) return;
         const id = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
         const proposerId = peerId ?? "";
         const next: Proposal = { id, proposerId, card };
+        pendingRollRef.current = null;
+        resetRoll();
         proposalRef.current = next;
         votesRef.current = [];
         hasVotedRef.current = false;
@@ -164,6 +269,17 @@ function GamePage() {
         setHasVoted(true);
     };
 
+    const handleRoll = () => {
+        if (!result || result.roll || result.proposerId !== peerId || rollRequestedRef.current) return;
+        rollRequestedRef.current = true;
+        setRollRequested(true);
+        sendGameData({
+            kind: "roll-request",
+            proposalId: result.id,
+            proposerId: peerId ?? "",
+        });
+    };
+
     if (!gameState) {
         return null;
     }
@@ -184,11 +300,27 @@ function GamePage() {
                 <PlayerList players={players} peerId={peerId} hostId={hostId} />
             </aside>
             <main className="game-board">
-                <EncounterCard encounter={encounter}></EncounterCard>
+                <EncounterCard encounter={encounter} successes={gameState.successes}></EncounterCard>
                 <Hand cards={gameState.hand} onCardClick={handleCardClick}></Hand >
             </main>
-            {result ? (
-                <ResultPopup card={result.card} result={result.result} onClose={() => setResult(null)} />
+            {result?.roll?.gameOver ? (
+                <GameOverPopup
+                    card={result.card}
+                    result={result.result}
+                    roll={result.roll}
+                    onClose={() => setResult(null)}
+                />
+            ) : result ? (
+                <ResultPopup
+                    card={result.card}
+                    result={result.result}
+                    proposerId={result.proposerId}
+                    peerId={peerId}
+                    canRoll={result.proposerId === peerId && !result.roll && !rollRequested}
+                    roll={result.roll}
+                    onRoll={handleRoll}
+                    onClose={() => setResult(null)}
+                />
             ) : proposal ? (
                 <CardPopup
                     card={proposal.card}

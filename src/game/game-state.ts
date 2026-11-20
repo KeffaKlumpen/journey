@@ -4,6 +4,7 @@ export type GameState = {
     hand: Action[];
     encounters: Encounter[];
     currentEncounterIndex: number;
+    successes: number;
 };
 
 function shuffle<T>(items: readonly T[]): T[] {
@@ -31,5 +32,6 @@ export function createGameState(
         hand,
         encounters: drawnEncounters,
         currentEncounterIndex: 0,
+        successes: 0,
     };
 }

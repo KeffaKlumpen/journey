@@ -32,3 +32,14 @@
   height: 15vh;
   padding-top: 5vh;
 }
+
+.successes {
+  display: flex;
+  justify-content: center;
+  gap: 0.5vw;
+  color: var(--border);
+}
+
+.successes .success {
+  color: var(--accent);
+}
