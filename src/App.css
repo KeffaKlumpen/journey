@@ -1,0 +1,23 @@
+.hand {
+  display: flex;
+  justify-content: center;
+  gap: 0.5vw;
+}
+
+.actionCard {
+  border-style: groove;
+  aspect-ratio: 3 / 5;
+  min-height: 20vh;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.encounter {
+  height: 70vh;
+}
+.encounter>img {
+  aspect-ratio: 16 / 9;
+  height: 40vh;
+}
