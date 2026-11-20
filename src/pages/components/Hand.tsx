@@ -8,9 +8,13 @@ type HandProps = {
 function Hand({ cards, onCardClick }: HandProps) {
     return (
         <div className="hand">
-            {cards.map((card, index) => (
-                <HandCard card={card} key={card} onClick={onCardClick ? () => onCardClick(card, index) : undefined} />
-            ))}
+            {cards.length === 0 ? (
+                <p className="empty-hand">No cards left</p>
+            ) : (
+                cards.map((card, index) => (
+                    <HandCard card={card} key={card} onClick={onCardClick ? () => onCardClick(card, index) : undefined} />
+                ))
+            )}
         </div>
     )
 }

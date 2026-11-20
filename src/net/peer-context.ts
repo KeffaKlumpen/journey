@@ -15,6 +15,7 @@ export type PeerContextValue = {
     error: string | null;
     gameState: GameState | null;
     applyGameProgress: (progress: Pick<GameState, "successes" | "currentEncounterIndex">) => void;
+    playCard: (card: Action) => void;
     startGame: () => void;
     leaveLobby: () => void;
     subscribe: (handler: (message: LobbyMessage) => void) => () => void;

@@ -86,6 +86,17 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         setGameState((current) => current ? { ...current, ...progress } : current);
     }, []);
 
+    const playCard = useCallback((card: Action) => {
+        setGameState((current) => {
+            if (!current) return current;
+            const index = current.hand.indexOf(card);
+            if (index === -1) return current;
+            const hand = [...current.hand];
+            hand.splice(index, 1);
+            return { ...current, hand };
+        });
+    }, []);
+
     useEffect(() => {
         let disposed = false;
 
@@ -350,6 +361,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         error,
         gameState,
         applyGameProgress,
+        playCard,
         startGame,
         leaveLobby,
         subscribe,
