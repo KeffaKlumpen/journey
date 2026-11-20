@@ -7,9 +7,12 @@ import {
 } from "react";
 import { Peer, type DataConnection } from "peerjs";
 import { useNavigate, useSearchParams } from "react-router";
+import type { Action } from "../game/card-data";
 import { createEncounters, createGameState, createHand, type GameState } from "../game/game-state";
 import { isLobbyMessage, type GameDataPayload, type LobbyMessage, type Player } from "./messages";
 import { PeerContext, type PeerContextValue, type Role, type Status } from "./peer-context";
+
+type Proposal = Omit<Extract<GameDataPayload, { kind: "card-played" }>, "kind">;
 
 export function PeerProvider({ children }: { children: ReactNode }) {
     const navigate = useNavigate();
@@ -26,6 +29,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
     const roleRef = useRef<Role>(null);
     const playersRef = useRef<Player[]>([]);
     const leavingRef = useRef(false);
+    const activeProposalRef = useRef<Proposal | null>(null);
     const handlersRef = useRef<Set<(message: LobbyMessage) => void>>(new Set());
 
     const [status, setStatus] = useState<Status>("connecting");
@@ -53,6 +57,18 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         }
     }, [send]);
 
+    // Only the host accepts proposals, so there is a single active vote at a time.
+    const acceptProposal = useCallback((proposal: Proposal) => {
+        if (activeProposalRef.current) return;
+        activeProposalRef.current = proposal;
+        const message: LobbyMessage = {
+            type: "game-data",
+            payload: { kind: "card-played", ...proposal },
+        };
+        broadcast(message);
+        dispatch(message);
+    }, [broadcast, dispatch]);
+
     const setRoster = useCallback((next: Player[]) => {
         playersRef.current = next;
         setPlayers(next);
@@ -75,6 +91,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
 
         roleRef.current = null;
         leavingRef.current = false;
+        activeProposalRef.current = null;
 
         const peer = new Peer({
             host: "localhost",
@@ -138,7 +155,19 @@ export function PeerProvider({ children }: { children: ReactNode }) {
                     break;
                 }
                 case "game-data": {
-                    // Guests send game data to the host, which relays it to the others.
+                    const payload = message.payload;
+                    if (payload.kind === "card-proposal") {
+                        // Proposals are requests only; the host alone decides and announces the card.
+                        if (roleRef.current === "host") {
+                            acceptProposal({
+                                proposalId: payload.proposalId,
+                                proposerId: payload.proposerId,
+                                card: payload.card,
+                            });
+                        }
+                        break;
+                    }
+                    // Guests send other game data to the host, which relays it to the others.
                     if (roleRef.current === "host" && from.peer !== peer.id) {
                         for (const [id, connection] of connections) {
                             if (id !== from.peer) send(connection, message);
@@ -232,13 +261,15 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             leavingRef.current = true;
             if (!peer.destroyed) peer.destroy();
             peerRef.current = null;
+            activeProposalRef.current = null;
             connections.clear();
             handlers.clear();
         };
-    }, [dispatch, send, broadcastRoster, setRoster]);
+    }, [dispatch, send, broadcastRoster, setRoster, acceptProposal]);
 
     const startGame = useCallback(() => {
         if (roleRef.current !== "host") return;
+        activeProposalRef.current = null;
         const drawnEncounters = createEncounters();
         const hands = new Map(playersRef.current.map((player) => [player.id, createHand()]));
         const ownHand = hands.get(peerRef.current?.id ?? "")!;
@@ -281,10 +312,34 @@ export function PeerProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const sendGameData = useCallback((payload: GameDataPayload) => {
+        if (roleRef.current === "host" && payload.kind === "vote-result") {
+            activeProposalRef.current = null;
+        }
         const message: LobbyMessage = { type: "game-data", payload };
         broadcast(message);
         dispatch(message);
     }, [broadcast, dispatch]);
+
+    const proposeCard = useCallback((card: Action) => {
+        const proposal: Proposal = {
+            proposalId: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+            proposerId: peerRef.current?.id ?? "",
+            card,
+        };
+
+        if (roleRef.current === "host") {
+            acceptProposal(proposal);
+            return;
+        }
+
+        const hostConnection = connectionsRef.current.get(entryIdRef.current ?? "");
+        if (hostConnection) {
+            send(hostConnection, {
+                type: "game-data",
+                payload: { kind: "card-proposal", ...proposal },
+            });
+        }
+    }, [acceptProposal, send]);
 
     const value: PeerContextValue = {
         status,
@@ -299,6 +354,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         leaveLobby,
         subscribe,
         sendGameData,
+        proposeCard,
     };
 
     return <PeerContext.Provider value={value}>{children}</PeerContext.Provider>;

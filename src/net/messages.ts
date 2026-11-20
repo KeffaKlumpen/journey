@@ -10,6 +10,7 @@ export type VoteOption = typeof VOTE_OPTIONS[number];
 
 export type GameDataPayload =
     | { kind: "card-proposal"; proposalId: string; proposerId: string; card: Action }
+    | { kind: "card-played"; proposalId: string; proposerId: string; card: Action }
     | { kind: "card-vote"; proposalId: string; voterId: string; vote: VoteOption }
     | { kind: "vote-result"; proposalId: string; proposerId: string; card: Action; result: VoteOption }
     | { kind: "roll-request"; proposalId: string; proposerId: string }
@@ -49,6 +50,7 @@ export function isGameDataPayload(value: unknown): value is GameDataPayload {
     const kind = (value as { kind: unknown }).kind;
     return (
         kind === "card-proposal" ||
+        kind === "card-played" ||
         kind === "card-vote" ||
         kind === "vote-result" ||
         kind === "roll-request" ||

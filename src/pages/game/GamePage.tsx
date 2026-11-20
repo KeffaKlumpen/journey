@@ -51,7 +51,7 @@ function decideResult(votes: Vote[]): VoteOption {
 }
 
 function GamePage() {
-    const { gameState, players, peerId, hostId, role, subscribe, sendGameData, applyGameProgress } = usePeer();
+    const { gameState, players, peerId, hostId, role, subscribe, sendGameData, applyGameProgress, proposeCard } = usePeer();
     const navigate = useNavigate();
     const [proposal, setProposal] = useState<Proposal | null>(null);
     const [votes, setVotes] = useState<Vote[]>([]);
@@ -99,8 +99,7 @@ function GamePage() {
         if (message.type !== "game-data" || !isGameDataPayload(message.payload)) return;
         const payload = message.payload;
 
-        if (payload.kind === "card-proposal") {
-            if (proposalRef.current) return;
+        if (payload.kind === "card-played") {
             pendingRollRef.current = null;
             resetRoll();
             const next: Proposal = {
@@ -242,20 +241,8 @@ function GamePage() {
     }), [subscribe, role, sendGameData, applyGameProgress]);
 
     const handleCardClick = (card: string) => {
-        if (proposalRef.current) return;
-        const id = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-        const proposerId = peerId ?? "";
-        const next: Proposal = { id, proposerId, card };
-        pendingRollRef.current = null;
-        resetRoll();
-        proposalRef.current = next;
-        votesRef.current = [];
-        hasVotedRef.current = false;
-        setResult(null);
-        setProposal(next);
-        setVotes([]);
-        setHasVoted(false);
-        sendGameData({ kind: "card-proposal", proposalId: id, proposerId, card });
+        if (proposalRef.current || result) return;
+        proposeCard(card);
     };
 
     const handleVote = (vote: VoteOption) => {

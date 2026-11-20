@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import type { Action } from "../game/card-data";
 import type { GameState } from "../game/game-state";
 import type { GameDataPayload, LobbyMessage, Player } from "./messages";
 
@@ -18,6 +19,7 @@ export type PeerContextValue = {
     leaveLobby: () => void;
     subscribe: (handler: (message: LobbyMessage) => void) => () => void;
     sendGameData: (payload: GameDataPayload) => void;
+    proposeCard: (card: Action) => void;
 };
 
 export const PeerContext = createContext<PeerContextValue | null>(null);
