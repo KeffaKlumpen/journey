@@ -1,3 +1,34 @@
+export type MainQuest = {
+    title: string,
+    prompts: [string, string, string, string?]
+}
+export const mainQuests : MainQuest[] = [
+    {
+        title: "The Impostor",
+        prompts: ["Who is the importer posing as?", "Do you know their true identity?", "Where is the true person?", "Why do you need to unmask the imposter?"]
+    },
+    {
+        title: "Escort your Highness",
+        prompts: ["Who is your highness?", "Where are they going?", "Do they want to go?", "Why do they need an escort?"]
+    },
+    {
+        title: "Restore your honor",
+        prompts: ["How did you lose your honor?", "Who is responsible?", "To whom are you dishonored?", "Why do you need to restore it?"]
+    },
+    {
+        title: "Break the curse",
+        prompts: ["Who/what is cursed?", "What does the curse do?", "Where did the curse come from?", "Why do you need to break the curse?"]
+    },
+    {
+        title: "Deliver the antidote",
+        prompts: ["Who/what is poisoned?", "Who has the antidote?", "What caused the poisoning?"]
+    },
+    {
+        title: "Treasure hunt",
+        prompts: ["What are you looking for?", "Why are you looking for it?", "What makes this treasure unique?", "What happens if you can't find it?"]
+    },
+]
+
 export type Action = string
 export const actions : Action[] = [
     "Lick",
