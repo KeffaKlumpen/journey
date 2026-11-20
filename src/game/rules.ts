@@ -13,6 +13,9 @@ export function rollDice(count: number): number[] {
 
 export type EncounterResolution = {
     gained: number;
+    /** Successes on the encounter that was just resolved (for display). */
+    encounterSuccesses: number;
+    /** Successes to store for the current encounter going forward. */
     successes: number;
     currentEncounterIndex: number;
     advanced: boolean;
@@ -31,6 +34,7 @@ export function resolveEncounter(
     if (total < 3) {
         return {
             gained,
+            encounterSuccesses: total,
             successes: total,
             currentEncounterIndex,
             advanced: false,
@@ -41,6 +45,7 @@ export function resolveEncounter(
     if (currentEncounterIndex >= encounterCount - 1) {
         return {
             gained,
+            encounterSuccesses: 3,
             successes: 3,
             currentEncounterIndex,
             advanced: false,
@@ -50,6 +55,7 @@ export function resolveEncounter(
 
     return {
         gained,
+        encounterSuccesses: 3,
         successes: 0,
         currentEncounterIndex: currentEncounterIndex + 1,
         advanced: true,

@@ -204,6 +204,7 @@ function GamePage() {
                 result: pending.result,
                 dice,
                 gained: resolution.gained,
+                encounterSuccesses: resolution.encounterSuccesses,
                 successes: resolution.successes,
                 currentEncounterIndex: resolution.currentEncounterIndex,
                 gameOver: resolution.gameOver,
@@ -233,7 +234,7 @@ function GamePage() {
                 roll: {
                     dice: payload.dice,
                     gained: payload.gained,
-                    successes: payload.successes,
+                    encounterSuccesses: payload.encounterSuccesses,
                     gameOver: payload.gameOver,
                 },
             });

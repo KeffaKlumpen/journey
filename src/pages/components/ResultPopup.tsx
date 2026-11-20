@@ -3,7 +3,7 @@ import type { VoteOption } from "../../net/messages";
 export type DiceRoll = {
     dice: number[];
     gained: number;
-    successes: number;
+    encounterSuccesses: number;
 };
 
 type ResultPopupProps = {
@@ -28,7 +28,7 @@ function ResultPopup({ card, result, proposerId, peerId, canRoll, roll, onRoll, 
                     <>
                         <p className="popup-status">Dice: {roll.dice.join(", ")}</p>
                         <p className="popup-status">
-                            {roll.gained} success{roll.gained === 1 ? "" : "es"} · {roll.successes}/3 on this encounter
+                            {roll.gained} success{roll.gained === 1 ? "" : "es"} · {roll.encounterSuccesses}/3 on this encounter
                         </p>
                         <button onClick={onClose}>Close</button>
                     </>

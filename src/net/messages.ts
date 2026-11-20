@@ -21,6 +21,7 @@ export type GameDataPayload =
         result: VoteOption;
         dice: number[];
         gained: number;
+        encounterSuccesses: number;
         successes: number;
         currentEncounterIndex: number;
         gameOver: boolean;
