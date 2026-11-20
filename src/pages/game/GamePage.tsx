@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { actions, encounters as availableEncounters } from "../game/card-data";
-import EncounterCard from "./components/EncounterCard";
-import Hand from "./components/Hand";
+import { actions, encounters as availableEncounters } from "../../game/card-data";
+import EncounterCard from "../components/EncounterCard";
+import Hand from "../components/Hand";
 
 function GamePage() {
     const [hand] = useState(actions.sort((_a, _b) => Math.random() - 0.5).slice(0, 5))

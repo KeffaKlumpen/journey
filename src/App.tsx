@@ -1,9 +1,10 @@
-import './App.css'
-import GamePage from './pages/GamePage'
+import './App.css';
+import { Router } from './router';
+
 
 function App() {
    return (
-      <GamePage />
+      <Router />
    )
 }
 
