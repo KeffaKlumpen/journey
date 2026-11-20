@@ -3,12 +3,15 @@ import { VOTE_OPTIONS, type VoteOption } from "../../net/messages";
 type CardPopupProps = {
     card: string;
     isProposer: boolean;
+    isWaiting: boolean;
     votesReceived: number;
     totalVoters: number;
     onVote: (vote: VoteOption) => void;
 };
 
-function CardPopup({ card, isProposer, votesReceived, totalVoters, onVote }: CardPopupProps) {
+function CardPopup({ card, isProposer, isWaiting, votesReceived, totalVoters, onVote }: CardPopupProps) {
+    const waiting = isProposer || isWaiting;
+
     return (
         <div className="popup-backdrop">
             <div
@@ -17,11 +20,10 @@ function CardPopup({ card, isProposer, votesReceived, totalVoters, onVote }: Car
                 aria-modal="true"
                 aria-label={`Action card: ${card}`}
             >
-                <p className="popup-label">
-                    {isProposer ? "You proposed an action" : "Is this a good idea?"}
-                </p>
+                {isProposer && <p className="popup-label">You proposed an action</p>}
+                {!waiting && <p className="popup-label">Is this a good idea?</p>}
                 <h2 className="popup-title">{card}</h2>
-                {isProposer ? (
+                {waiting ? (
                     <p className="popup-status">Waiting for votes... ({votesReceived}/{totalVoters})</p>
                 ) : (
                     <div className="vote-options">

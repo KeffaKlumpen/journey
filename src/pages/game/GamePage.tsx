@@ -189,10 +189,11 @@ function GamePage() {
             </main>
             {result ? (
                 <ResultPopup card={result.card} result={result.result} onClose={() => setResult(null)} />
-            ) : proposal && !hasVoted ? (
+            ) : proposal ? (
                 <CardPopup
                     card={proposal.card}
                     isProposer={proposal.proposerId === peerId}
+                    isWaiting={hasVoted}
                     votesReceived={votesReceived}
                     totalVoters={otherPlayers.length}
                     onVote={handleVote}
