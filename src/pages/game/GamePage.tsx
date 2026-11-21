@@ -373,7 +373,8 @@ function GamePage() {
                 <PlayerList players={players} peerId={peerId} hostId={hostId} />
             </aside>
             <main className="game-board">
-                <EncounterCard encounter={encounter} questTitle={gameState.quest.title} successes={gameState.successes}></EncounterCard>
+                <p className="quest-label">Quest: {gameState.quest.title}</p>
+                <EncounterCard encounter={encounter} successes={gameState.successes}></EncounterCard>
                 <Hand cards={gameState.hand} onCardClick={handleCardClick}></Hand >
             </main>
             {result?.roll?.gameOver ? (
