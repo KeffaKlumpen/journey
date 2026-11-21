@@ -10,6 +10,7 @@ import {
 } from "../../net/messages";
 import AudioControls from "../components/AudioControls";
 import CardPopup from "../components/CardPopup";
+import ChatWindow from "../components/ChatWindow";
 import EncounterCard from "../components/EncounterCard";
 import Hand from "../components/Hand";
 import PlayerList from "../components/PlayerList";
@@ -385,6 +386,7 @@ function GamePage() {
                 <aside className="player-sidebar">
                     <PlayerList players={players} peerId={peerId} hostId={hostId} />
                     <AudioControls />
+                    <ChatWindow />
                 </aside>
                 <PrepPhase
                     quest={gameState.quest}
@@ -425,6 +427,7 @@ function GamePage() {
             <aside className="player-sidebar">
                 <PlayerList players={players} peerId={peerId} hostId={hostId} />
                 <AudioControls />
+                <ChatWindow />
             </aside>
             <main className="game-board">
                 <EncounterCard encounter={encounter} successes={gameState.successes}></EncounterCard>

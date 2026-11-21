@@ -10,7 +10,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import type { Action } from "../game/card-data";
 import { type GameState } from "../game/game-state";
 import { createEncounters, createGameState, createHand, createQuest } from "../game/rules";
-import { isLobbyMessage, type GameDataPayload, type LobbyMessage, type Player } from "./messages";
+import { isLobbyMessage, type ChatMessage, type GameDataPayload, type LobbyMessage, type Player } from "./messages";
 import { PeerContext, type PeerContextValue, type Role, type Status } from "./peer-context";
 
 type Proposal = Omit<Extract<GameDataPayload, { kind: "card-played" }>, "kind">;
@@ -48,6 +48,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
     const [isMuted, setIsMuted] = useState(true);
     const [unmutedPlayerIds, setUnmutedPlayerIds] = useState<string[]>([]);
     const [voiceError, setVoiceError] = useState<string | null>(null);
+    const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
     const dispatch = useCallback((message: LobbyMessage) => {
         for (const handler of handlersRef.current) {
@@ -296,6 +297,15 @@ export function PeerProvider({ children }: { children: ReactNode }) {
                     }
                     break;
                 }
+                case "chat": {
+                    setChatMessages((current) => [...current, message.message]);
+                    if (roleRef.current === "host" && from.peer !== peer.id) {
+                        for (const [id, connection] of connections) {
+                            if (id !== from.peer) send(connection, message);
+                        }
+                    }
+                    break;
+                }
                 case "start-game": {
                     if (roleRef.current === "guest") {
                         setGameState(message.game);
@@ -451,6 +461,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             peerRef.current = null;
             activeProposalRef.current = null;
             stopVoice();
+            setChatMessages([]);
             connections.clear();
             handlers.clear();
         };
@@ -567,6 +578,28 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         sendGameData({ kind: "prep-name-reset", playerId });
     }, [setRoster, broadcastRoster, sendGameData]);
 
+    const sendChat = useCallback((text: string) => {
+        const trimmed = text.trim();
+        const id = peerRef.current?.id;
+        if (!trimmed || !id) return;
+
+        const chatMessage: ChatMessage = {
+            id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+            senderId: id,
+            text: trimmed,
+            timestamp: Date.now(),
+        };
+        setChatMessages((current) => [...current, chatMessage]);
+
+        const message: LobbyMessage = { type: "chat", message: chatMessage };
+        if (roleRef.current === "host") {
+            broadcast(message);
+        } else {
+            const hostConnection = connectionsRef.current.get(entryIdRef.current ?? "");
+            if (hostConnection) send(hostConnection, message);
+        }
+    }, [broadcast, send]);
+
     const value: PeerContextValue = {
         status,
         peerId,
@@ -583,6 +616,8 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         toggleMute,
         unmutedPlayerIds,
         voiceError,
+        chatMessages,
+        sendChat,
         startGame,
         leaveLobby,
         subscribe,

@@ -1,6 +1,7 @@
 import './lobby.css'
 import { usePeer } from '../../net/peer-context';
 import AudioControls from '../components/AudioControls';
+import ChatWindow from '../components/ChatWindow';
 import PlayerList from '../components/PlayerList';
 
 function LobbyPage() {
@@ -22,6 +23,7 @@ function LobbyPage() {
             <div style={{width: "20vw"}}>
                 <PlayerList players={players} peerId={peerId} hostId={hostId} />
                 <AudioControls />
+                <ChatWindow />
             </div>
 
             {isHost && <button onClick={startGame}>Start game</button>}

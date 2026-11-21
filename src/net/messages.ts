@@ -6,6 +6,13 @@ export type Player = {
     characterName?: string;
 };
 
+export type ChatMessage = {
+    id: string;
+    senderId: string;
+    text: string;
+    timestamp: number;
+};
+
 export const VOTE_OPTIONS = ["BAD", "OK", "GOOD", "GREAT"] as const;
 export type VoteOption = typeof VOTE_OPTIONS[number];
 
@@ -40,6 +47,7 @@ export type LobbyMessage =
     | { type: "leave"; playerId: string }
     | { type: "lobby-closed" }
     | { type: "mute-state"; playerId: string; muted: boolean }
+    | { type: "chat"; message: ChatMessage }
     | { type: "start-game"; game: GameState }
     | { type: "game-data"; payload: GameDataPayload };
 
