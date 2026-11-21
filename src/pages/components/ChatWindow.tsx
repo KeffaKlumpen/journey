@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { usePeer } from "../../net/peer-context";
 
 function ChatWindow() {
@@ -11,11 +11,22 @@ function ChatWindow() {
         if (list) list.scrollTop = list.scrollHeight;
     }, [chatMessages]);
 
+    const sendDraft = () => {
+        if (!draft.trim()) return;
+        sendChat(draft.trim());
+        setDraft("");
+    };
+
     const handleSubmit = (event: FormEvent) => {
         event.preventDefault();
-        if (!draft.trim()) return;
-        sendChat(draft);
-        setDraft("");
+        sendDraft();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            sendDraft();
+        }
     };
 
     const displayName = (senderId: string) => {
@@ -37,12 +48,13 @@ function ChatWindow() {
                 ))}
             </ul>
             <form className="chat-form" onSubmit={handleSubmit}>
-                <input
-                    type="text"
+                <textarea
                     value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
+                    onChange={(event) => setDraft(event.target.value.replace(/[\r\n]+/g, " "))}
+                    onKeyDown={handleKeyDown}
                     placeholder="Message"
-                    maxLength={500}
+                    rows={2}
+                    maxLength={200}
                     aria-label="Chat message"
                 />
                 <button type="submit" disabled={!draft.trim()}>Send</button>
