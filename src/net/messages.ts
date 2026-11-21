@@ -39,6 +39,7 @@ export type LobbyMessage =
     | { type: "lobby-state"; players: Player[]; hostId: string }
     | { type: "leave"; playerId: string }
     | { type: "lobby-closed" }
+    | { type: "mute-state"; playerId: string; muted: boolean }
     | { type: "start-game"; game: GameState }
     | { type: "game-data"; payload: GameDataPayload };
 

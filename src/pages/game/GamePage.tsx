@@ -8,6 +8,7 @@ import {
     type Player,
     type VoteOption,
 } from "../../net/messages";
+import AudioControls from "../components/AudioControls";
 import CardPopup from "../components/CardPopup";
 import EncounterCard from "../components/EncounterCard";
 import Hand from "../components/Hand";
@@ -383,6 +384,7 @@ function GamePage() {
             <div className="game-layout">
                 <aside className="player-sidebar">
                     <PlayerList players={players} peerId={peerId} hostId={hostId} />
+                    <AudioControls />
                 </aside>
                 <PrepPhase
                     quest={gameState.quest}
@@ -422,6 +424,7 @@ function GamePage() {
         <div className="game-layout">
             <aside className="player-sidebar">
                 <PlayerList players={players} peerId={peerId} hostId={hostId} />
+                <AudioControls />
             </aside>
             <main className="game-board">
                 <EncounterCard encounter={encounter} successes={gameState.successes}></EncounterCard>

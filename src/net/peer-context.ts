@@ -18,6 +18,10 @@ export type PeerContextValue = {
     playCard: (card: Action) => void;
     setCharacterName: (characterName: string) => void;
     clearCharacterName: (playerId: string) => void;
+    isMuted: boolean;
+    toggleMute: () => void;
+    unmutedPlayerIds: string[];
+    voiceError: string | null;
     startGame: () => void;
     leaveLobby: () => void;
     subscribe: (handler: (message: LobbyMessage) => void) => () => void;

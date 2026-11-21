@@ -5,7 +5,7 @@ import {
     useState,
     type ReactNode,
 } from "react";
-import { Peer, type DataConnection } from "peerjs";
+import { Peer, type DataConnection, type MediaConnection } from "peerjs";
 import { useNavigate, useSearchParams } from "react-router";
 import type { Action } from "../game/card-data";
 import { type GameState } from "../game/game-state";
@@ -32,6 +32,11 @@ export function PeerProvider({ children }: { children: ReactNode }) {
     const leavingRef = useRef(false);
     const activeProposalRef = useRef<Proposal | null>(null);
     const handlersRef = useRef<Set<(message: LobbyMessage) => void>>(new Set());
+    const localStreamRef = useRef<MediaStream | null>(null);
+    const mediaConnectionsRef = useRef<Map<string, MediaConnection>>(new Map());
+    const pendingCallsRef = useRef<Map<string, MediaConnection>>(new Map());
+    const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+    const isMutedRef = useRef(true);
 
     const [status, setStatus] = useState<Status>("connecting");
     const [peerId, setPeerId] = useState<string | undefined>(undefined);
@@ -40,6 +45,9 @@ export function PeerProvider({ children }: { children: ReactNode }) {
     const [hostId, setHostId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [gameState, setGameState] = useState<PeerContextValue["gameState"]>(null);
+    const [isMuted, setIsMuted] = useState(true);
+    const [unmutedPlayerIds, setUnmutedPlayerIds] = useState<string[]>([]);
+    const [voiceError, setVoiceError] = useState<string | null>(null);
 
     const dispatch = useCallback((message: LobbyMessage) => {
         for (const handler of handlersRef.current) {
@@ -89,6 +97,120 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         ));
         broadcastRoster();
     }, [setRoster, broadcastRoster]);
+
+    const recordMuteState = useCallback((playerId: string, muted: boolean) => {
+        setUnmutedPlayerIds((current) => {
+            const present = current.includes(playerId);
+            if (muted) return present ? current.filter((id) => id !== playerId) : current;
+            return present ? current : [...current, playerId];
+        });
+    }, []);
+
+    const attachRemoteStream = useCallback((remoteId: string, stream: MediaStream) => {
+        let audio = audioElementsRef.current.get(remoteId);
+        if (!audio) {
+            audio = new Audio();
+            audio.autoplay = true;
+            audioElementsRef.current.set(remoteId, audio);
+        }
+        audio.srcObject = stream;
+        audio.play().catch(() => {
+            // Autoplay may be blocked until the user interacts with the page.
+        });
+    }, []);
+
+    const cleanupVoice = useCallback((remoteId: string) => {
+        mediaConnectionsRef.current.delete(remoteId);
+        pendingCallsRef.current.delete(remoteId);
+        const audio = audioElementsRef.current.get(remoteId);
+        if (audio) {
+            audio.pause();
+            audio.srcObject = null;
+            audioElementsRef.current.delete(remoteId);
+        }
+    }, []);
+
+    const closeVoiceConnection = useCallback((remoteId: string) => {
+        const call = mediaConnectionsRef.current.get(remoteId)
+            ?? pendingCallsRef.current.get(remoteId);
+        cleanupVoice(remoteId);
+        call?.close();
+    }, [cleanupVoice]);
+
+    const registerMediaConnection = useCallback((remoteId: string, call: MediaConnection) => {
+        mediaConnectionsRef.current.set(remoteId, call);
+        call.on("stream", (remote) => attachRemoteStream(remoteId, remote));
+        call.on("close", () => cleanupVoice(remoteId));
+    }, [attachRemoteStream, cleanupVoice]);
+
+    const syncVoiceConnections = useCallback(() => {
+        const peer = peerRef.current;
+        const stream = localStreamRef.current;
+        if (!peer || !stream || peer.destroyed) return;
+        const ownId = peer.id;
+
+        // Answer calls that arrived before the microphone stream was ready.
+        for (const [remoteId, call] of pendingCallsRef.current) {
+            call.answer(stream);
+            registerMediaConnection(remoteId, call);
+        }
+        pendingCallsRef.current.clear();
+
+        for (const player of playersRef.current) {
+            if (player.id === ownId || mediaConnectionsRef.current.has(player.id)) continue;
+            if (ownId < player.id) {
+                const call = peer.call(player.id, stream);
+                registerMediaConnection(player.id, call);
+            }
+        }
+
+        for (const remoteId of [...mediaConnectionsRef.current.keys()]) {
+            if (!playersRef.current.some((player) => player.id === remoteId)) {
+                closeVoiceConnection(remoteId);
+            }
+        }
+    }, [registerMediaConnection, closeVoiceConnection]);
+
+    const stopVoice = useCallback(() => {
+        for (const remoteId of [
+            ...mediaConnectionsRef.current.keys(),
+            ...pendingCallsRef.current.keys(),
+        ]) {
+            closeVoiceConnection(remoteId);
+        }
+        localStreamRef.current?.getTracks().forEach((track) => track.stop());
+        localStreamRef.current = null;
+        isMutedRef.current = true;
+        setIsMuted(true);
+        setUnmutedPlayerIds([]);
+        setVoiceError(null);
+    }, [closeVoiceConnection]);
+
+    const toggleMute = useCallback(() => {
+        const nextMuted = !isMutedRef.current;
+        isMutedRef.current = nextMuted;
+        setIsMuted(nextMuted);
+        localStreamRef.current?.getAudioTracks().forEach((track) => {
+            track.enabled = !nextMuted;
+        });
+        // Retry any audio blocked by autoplay policies now that we have a user gesture.
+        for (const audio of audioElementsRef.current.values()) {
+            audio.play().catch(() => {
+                // Still blocked; will retry on the next toggle.
+            });
+        }
+
+        const id = peerRef.current?.id;
+        if (!id) return;
+        recordMuteState(id, nextMuted);
+        const message: LobbyMessage = { type: "mute-state", playerId: id, muted: nextMuted };
+        if (roleRef.current === "host") {
+            broadcast(message);
+        } else {
+            const hostConnection = connectionsRef.current.get(entryIdRef.current ?? "");
+            if (hostConnection) send(hostConnection, message);
+        }
+    }, [broadcast, send, recordMuteState]);
 
     const applyGameProgress = useCallback((progress: Pick<GameState, "successes" | "currentEncounterIndex">) => {
         setGameState((current) => current ? { ...current, ...progress } : current);
@@ -162,6 +284,15 @@ export function PeerProvider({ children }: { children: ReactNode }) {
                     if (roleRef.current === "guest") {
                         leavingRef.current = true;
                         navigateRef.current("/");
+                    }
+                    break;
+                }
+                case "mute-state": {
+                    recordMuteState(message.playerId, message.muted);
+                    if (roleRef.current === "host" && from.peer !== peer.id) {
+                        for (const [id, connection] of connections) {
+                            if (id !== from.peer) send(connection, message);
+                        }
                     }
                     break;
                 }
@@ -245,6 +376,21 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             if (disposed) return;
             setPeerId(id);
             setStatus("connected");
+
+            navigator.mediaDevices?.getUserMedia({ audio: true })
+                .then((stream) => {
+                    if (disposed) {
+                        stream.getTracks().forEach((track) => track.stop());
+                        return;
+                    }
+                    stream.getAudioTracks().forEach((track) => { track.enabled = false; });
+                    localStreamRef.current = stream;
+                    syncVoiceConnections();
+                })
+                .catch(() => {
+                    if (!disposed) setVoiceError("Microphone unavailable");
+                });
+
             const entry = entryIdRef.current;
             if (entry) {
                 roleRef.current = "guest";
@@ -268,6 +414,22 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             }
         });
 
+        peer.on("call", (call) => {
+            if (disposed) return;
+            const remoteId = call.peer;
+            if (mediaConnectionsRef.current.has(remoteId) || pendingCallsRef.current.has(remoteId)) {
+                closeVoiceConnection(remoteId);
+            }
+            const stream = localStreamRef.current;
+            if (!stream) {
+                pendingCallsRef.current.set(remoteId, call);
+                call.on("close", () => pendingCallsRef.current.delete(remoteId));
+                return;
+            }
+            call.answer(stream);
+            registerMediaConnection(remoteId, call);
+        });
+
         peer.on("error", (err) => {
             if (disposed) return;
             setStatus("error");
@@ -288,10 +450,19 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             if (!peer.destroyed) peer.destroy();
             peerRef.current = null;
             activeProposalRef.current = null;
+            stopVoice();
             connections.clear();
             handlers.clear();
         };
-    }, [dispatch, send, broadcastRoster, setRoster, acceptProposal, updateRosterName]);
+    }, [
+        dispatch, send, broadcastRoster, setRoster, acceptProposal, updateRosterName,
+        recordMuteState, attachRemoteStream, cleanupVoice, closeVoiceConnection,
+        registerMediaConnection, syncVoiceConnections, stopVoice,
+    ]);
+
+    useEffect(() => {
+        syncVoiceConnections();
+    }, [players, syncVoiceConnections]);
 
     const startGame = useCallback(() => {
         if (roleRef.current !== "host") return;
@@ -408,6 +579,10 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         playCard,
         setCharacterName,
         clearCharacterName,
+        isMuted,
+        toggleMute,
+        unmutedPlayerIds,
+        voiceError,
         startGame,
         leaveLobby,
         subscribe,
