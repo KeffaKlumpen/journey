@@ -9,6 +9,9 @@ export const VOTE_OPTIONS = ["BAD", "OK", "GOOD", "GREAT"] as const;
 export type VoteOption = typeof VOTE_OPTIONS[number];
 
 export type GameDataPayload =
+    | { kind: "prep-done"; playerId: string; step: number }
+    | { kind: "prep-advance"; step: number }
+    | { kind: "prep-complete" }
     | { kind: "card-proposal"; proposalId: string; proposerId: string; card: Action }
     | { kind: "card-played"; proposalId: string; proposerId: string; card: Action }
     | { kind: "card-vote"; proposalId: string; voterId: string; vote: VoteOption }
@@ -49,6 +52,9 @@ export function isGameDataPayload(value: unknown): value is GameDataPayload {
     if (typeof value !== "object" || value === null || !("kind" in value)) return false;
     const kind = (value as { kind: unknown }).kind;
     return (
+        kind === "prep-done" ||
+        kind === "prep-advance" ||
+        kind === "prep-complete" ||
         kind === "card-proposal" ||
         kind === "card-played" ||
         kind === "card-vote" ||

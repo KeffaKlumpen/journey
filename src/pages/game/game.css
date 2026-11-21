@@ -133,3 +133,96 @@
   color: var(--text);
   font-size: 0.6rem;
 }
+
+.quest-label {
+  margin: 0;
+  font-size: 0.5rem;
+  color: var(--accent);
+}
+
+.prep-phase {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2vh;
+  padding: 4vh 4vw;
+  text-align: center;
+}
+
+.prep-label {
+  margin: 0;
+  font-size: 0.5rem;
+  color: var(--text);
+}
+
+.prep-quest {
+  margin: 0;
+  color: var(--text-h);
+}
+
+.prep-prompt-card {
+  max-width: 45vw;
+  padding: 2vh 2vw;
+  border: 1px solid var(--accent-border);
+  border-radius: 1vh;
+  background: var(--accent-bg);
+}
+
+.prep-prompt {
+  margin: 0 0 1vh;
+  font-size: 0.8rem;
+  color: var(--text-h);
+}
+
+.prep-helpers {
+  margin: 0;
+  padding-left: 1.2vw;
+  text-align: left;
+  font-size: 0.55rem;
+  color: var(--text);
+}
+
+.prep-helpers li {
+  margin: 0.5vh 0;
+}
+
+.prep-ready ul {
+  list-style: none;
+  margin: 1vh 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5vw;
+}
+
+.prep-ready li {
+  padding: 0.5vh 0.75vw;
+  border: 1px solid var(--border);
+  border-radius: 0.5vh;
+  font-size: 0.5rem;
+}
+
+.prep-ready li.ready {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--text-h);
+}
+
+.prep-phase button {
+  padding: 1vh 2vw;
+  border: 1px solid var(--accent-border);
+  border-radius: 0.5vh;
+  background: var(--accent-bg);
+  color: var(--text-h);
+  font: inherit;
+  cursor: pointer;
+}
+
+.prep-phase button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}

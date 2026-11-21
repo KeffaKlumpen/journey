@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { DICE_COUNT, resolveEncounter, rollDice } from "../../game/rules";
 import { usePeer } from "../../net/peer-context";
@@ -12,6 +12,7 @@ import CardPopup from "../components/CardPopup";
 import EncounterCard from "../components/EncounterCard";
 import Hand from "../components/Hand";
 import PlayerList from "../components/PlayerList";
+import PrepPhase from "../components/PrepPhase";
 import ResultPopup, { type DiceRoll } from "../components/ResultPopup";
 import GameOverPopup from "../components/GameOverPopup";
 import "./game.css";
@@ -36,6 +37,12 @@ type Result = PendingRoll & {
     roll?: DiceRoll & { gameOver: boolean };
 };
 
+const PREP_PROMPTS = [
+    "Why is this quest important?",
+    "Who are you, as a group?",
+    "Who are you, as an individual?",
+];
+
 const VOTE_VALUES: Record<VoteOption, number> = {
     BAD: 0,
     OK: 1,
@@ -58,7 +65,13 @@ function GamePage() {
     const [hasVoted, setHasVoted] = useState(false);
     const [result, setResult] = useState<Result | null>(null);
     const [rollRequested, setRollRequested] = useState(false);
+    const [prepStep, setPrepStep] = useState(0);
+    const [prepDone, setPrepDone] = useState<string[]>([]);
+    const [prepComplete, setPrepComplete] = useState(false);
 
+    const prepStepRef = useRef(0);
+    const prepDoneRef = useRef<string[]>([]);
+    const prepCompleteRef = useRef(false);
     const proposalRef = useRef<Proposal | null>(null);
     const votesRef = useRef<Vote[]>([]);
     const hasVotedRef = useRef(false);
@@ -81,6 +94,25 @@ function GamePage() {
         }
     }, [gameState, navigate]);
 
+    const tryAdvancePrep = useCallback(() => {
+        if (role !== "host" || prepCompleteRef.current) return;
+        const currentPlayers = playersRef.current;
+        if (currentPlayers.length === 0) return;
+        if (!currentPlayers.every((player) => prepDoneRef.current.includes(player.id))) return;
+
+        if (prepStepRef.current < PREP_PROMPTS.length - 1) {
+            sendGameData({ kind: "prep-advance", step: prepStepRef.current + 1 });
+        } else {
+            prepCompleteRef.current = true;
+            setPrepComplete(true);
+            sendGameData({ kind: "prep-complete" });
+        }
+    }, [role, sendGameData]);
+
+    useEffect(() => {
+        tryAdvancePrep();
+    }, [players, tryAdvancePrep]);
+
     const clearProposal = () => {
         proposalRef.current = null;
         votesRef.current = [];
@@ -98,6 +130,30 @@ function GamePage() {
     useEffect(() => subscribe((message) => {
         if (message.type !== "game-data" || !isGameDataPayload(message.payload)) return;
         const payload = message.payload;
+
+        if (payload.kind === "prep-done") {
+            if (prepCompleteRef.current || payload.step !== prepStepRef.current) return;
+            if (prepDoneRef.current.includes(payload.playerId)) return;
+            const next = [...prepDoneRef.current, payload.playerId];
+            prepDoneRef.current = next;
+            setPrepDone(next);
+            tryAdvancePrep();
+            return;
+        }
+
+        if (payload.kind === "prep-advance") {
+            prepStepRef.current = payload.step;
+            prepDoneRef.current = [];
+            setPrepStep(payload.step);
+            setPrepDone([]);
+            return;
+        }
+
+        if (payload.kind === "prep-complete") {
+            prepCompleteRef.current = true;
+            setPrepComplete(true);
+            return;
+        }
 
         if (payload.kind === "card-played") {
             if (payload.proposerId === peerId) {
@@ -241,7 +297,13 @@ function GamePage() {
                 },
             });
         }
-    }), [subscribe, role, peerId, sendGameData, applyGameProgress, playCard]);
+    }), [subscribe, role, peerId, sendGameData, applyGameProgress, playCard, tryAdvancePrep]);
+
+    const handlePrepDone = () => {
+        const id = peerId ?? "";
+        if (!id || prepCompleteRef.current || prepDoneRef.current.includes(id)) return;
+        sendGameData({ kind: "prep-done", playerId: id, step: prepStepRef.current });
+    };
 
     const handleCardClick = (card: string) => {
         if (proposalRef.current || result) return;
@@ -275,6 +337,26 @@ function GamePage() {
         return null;
     }
 
+    if (!prepComplete) {
+        return (
+            <div className="game-layout">
+                <aside className="player-sidebar">
+                    <PlayerList players={players} peerId={peerId} hostId={hostId} />
+                </aside>
+                <PrepPhase
+                    quest={gameState.quest}
+                    step={prepStep}
+                    totalSteps={PREP_PROMPTS.length}
+                    prompt={PREP_PROMPTS[prepStep]}
+                    donePlayers={prepDone}
+                    players={players}
+                    peerId={peerId}
+                    onDone={handlePrepDone}
+                />
+            </div>
+        );
+    }
+
     const encounter = gameState.encounters[gameState.currentEncounterIndex];
     const otherPlayers = proposal
         ? players.filter((player) => player.id !== proposal.proposerId)
@@ -291,7 +373,7 @@ function GamePage() {
                 <PlayerList players={players} peerId={peerId} hostId={hostId} />
             </aside>
             <main className="game-board">
-                <EncounterCard encounter={encounter} successes={gameState.successes}></EncounterCard>
+                <EncounterCard encounter={encounter} questTitle={gameState.quest.title} successes={gameState.successes}></EncounterCard>
                 <Hand cards={gameState.hand} onCardClick={handleCardClick}></Hand >
             </main>
             {result?.roll?.gameOver ? (

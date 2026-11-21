@@ -3,12 +3,14 @@ import { type Encounter } from '../../game/card-data';
 
 type EncounterProps = {
     encounter: Encounter
+    questTitle: string
     successes: number
     background?: string
 }
-function EncounterCard({ encounter, successes, background }: EncounterProps) {
+function EncounterCard({ encounter, questTitle, successes, background }: EncounterProps) {
     return (
         <div className='encounter'>
+            <p className="quest-label">Quest: {questTitle}</p>
             <img src={background ?? fallback} />
             <h3>{encounter.title}</h3>
             {encounter.prompts.map((prompt) => (

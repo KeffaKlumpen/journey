@@ -1,8 +1,9 @@
-import { actions, encounters, type Action, type Encounter } from "./card-data";
+import { actions, encounters, mainQuests, type Action, type Encounter, type MainQuest } from "./card-data";
 
 export type GameState = {
     hand: Action[];
     encounters: Encounter[];
+    quest: MainQuest;
     currentEncounterIndex: number;
     successes: number;
 };
@@ -24,13 +25,19 @@ export function createEncounters(): Encounter[] {
     return shuffle(encounters).slice(0, 5);
 }
 
+export function createQuest(): MainQuest {
+    return mainQuests[Math.floor(Math.random() * mainQuests.length)];
+}
+
 export function createGameState(
     hand: Action[],
-    drawnEncounters: Encounter[]
+    drawnEncounters: Encounter[],
+    quest: MainQuest
 ): GameState {
     return {
         hand,
         encounters: drawnEncounters,
+        quest,
         currentEncounterIndex: 0,
         successes: 0,
     };

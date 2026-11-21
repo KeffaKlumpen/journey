@@ -8,7 +8,7 @@ import {
 import { Peer, type DataConnection } from "peerjs";
 import { useNavigate, useSearchParams } from "react-router";
 import type { Action } from "../game/card-data";
-import { createEncounters, createGameState, createHand, type GameState } from "../game/game-state";
+import { createEncounters, createGameState, createHand, createQuest, type GameState } from "../game/game-state";
 import { isLobbyMessage, type GameDataPayload, type LobbyMessage, type Player } from "./messages";
 import { PeerContext, type PeerContextValue, type Role, type Status } from "./peer-context";
 
@@ -282,16 +282,17 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         if (roleRef.current !== "host") return;
         activeProposalRef.current = null;
         const drawnEncounters = createEncounters();
+        const quest = createQuest();
         const hands = new Map(playersRef.current.map((player) => [player.id, createHand()]));
         const ownHand = hands.get(peerRef.current?.id ?? "")!;
 
-        // Each player gets their own hand; the encounters are shared.
+        // Each player gets their own hand; the encounters and quest are shared.
         for (const [id, connection] of connectionsRef.current) {
-            const game = createGameState(hands.get(id)!, drawnEncounters);
+            const game = createGameState(hands.get(id)!, drawnEncounters, quest);
             send(connection, { type: "start-game", game });
         }
 
-        const game = createGameState(ownHand, drawnEncounters);
+        const game = createGameState(ownHand, drawnEncounters, quest);
         const message: LobbyMessage = { type: "start-game", game };
         setGameState(game);
         dispatch(message);
