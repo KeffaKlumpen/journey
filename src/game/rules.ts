@@ -50,8 +50,8 @@ export function resolveEncounter(
     if (currentEncounterIndex >= encounterCount - 1) {
         return {
             gained,
-            encounterSuccesses: 3,
-            successes: 3,
+            encounterSuccesses: SUCCESS_REQUIRED,
+            successes: SUCCESS_REQUIRED,
             currentEncounterIndex,
             advanced: false,
             gameOver: true,
@@ -60,7 +60,7 @@ export function resolveEncounter(
 
     return {
         gained,
-        encounterSuccesses: 3,
+        encounterSuccesses: SUCCESS_REQUIRED,
         successes: 0,
         currentEncounterIndex: currentEncounterIndex + 1,
         advanced: true,

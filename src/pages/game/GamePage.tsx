@@ -13,6 +13,7 @@ import EncounterCard from "../components/EncounterCard";
 import Hand from "../components/Hand";
 import PlayerList from "../components/PlayerList";
 import PrepPhase from "../components/PrepPhase";
+import QuestSidebar, { type ActionAttempt, type PassedEncounter } from "../components/QuestSidebar";
 import ResultPopup, { type DiceRoll } from "../components/ResultPopup";
 import GameOverPopup from "../components/GameOverPopup";
 import "./game.css";
@@ -68,7 +69,11 @@ function GamePage() {
     const [prepStep, setPrepStep] = useState(0);
     const [prepDone, setPrepDone] = useState<string[]>([]);
     const [prepComplete, setPrepComplete] = useState(false);
+    const [passedEncounters, setPassedEncounters] = useState<PassedEncounter[]>([]);
 
+    const currentAttemptsRef = useRef<ActionAttempt[]>([]);
+    const passedEncountersRef = useRef<PassedEncounter[]>([]);
+    const lastEncounterIndexRef = useRef(0);
     const prepStepRef = useRef(0);
     const prepDoneRef = useRef<string[]>([]);
     const prepCompleteRef = useRef(false);
@@ -283,6 +288,27 @@ function GamePage() {
                 successes: payload.successes,
                 currentEncounterIndex: payload.currentEncounterIndex,
             });
+
+            const attempt: ActionAttempt = {
+                action: payload.card,
+                gained: payload.gained,
+                successes: payload.encounterSuccesses,
+            };
+            const attempts = [...currentAttemptsRef.current, attempt];
+            currentAttemptsRef.current = attempts;
+
+            const previousIndex = lastEncounterIndexRef.current;
+            if (payload.gameOver || payload.currentEncounterIndex > previousIndex) {
+                const encounter = currentGame?.encounters[previousIndex];
+                if (encounter) {
+                    const nextPassed = [...passedEncountersRef.current, { encounter, attempts }];
+                    passedEncountersRef.current = nextPassed;
+                    setPassedEncounters(nextPassed);
+                }
+                currentAttemptsRef.current = [];
+            }
+            lastEncounterIndexRef.current = payload.currentEncounterIndex;
+
             resetRoll();
             setResult({
                 id: payload.proposalId,
@@ -355,6 +381,11 @@ function GamePage() {
                     peerId={peerId}
                     onDone={handlePrepDone}
                 />
+                <QuestSidebar
+                    quest={gameState.quest}
+                    passedEncounters={passedEncounters}
+                    totalEncounters={gameState.encounters.length}
+                />
             </div>
         );
     }
@@ -375,10 +406,14 @@ function GamePage() {
                 <PlayerList players={players} peerId={peerId} hostId={hostId} />
             </aside>
             <main className="game-board">
-                <p className="quest-label">Quest: {gameState.quest.title}</p>
                 <EncounterCard encounter={encounter} successes={gameState.successes}></EncounterCard>
                 <Hand cards={gameState.hand} onCardClick={handleCardClick}></Hand >
             </main>
+            <QuestSidebar
+                quest={gameState.quest}
+                passedEncounters={passedEncounters}
+                totalEncounters={gameState.encounters.length}
+            />
             {result?.roll?.gameOver ? (
                 <GameOverPopup
                     card={result.card}
