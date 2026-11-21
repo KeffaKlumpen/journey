@@ -254,10 +254,10 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         voiceStartedRef.current = false;
 
         const peer = new Peer({
-            host: "localhost",
-            port: 9000,
-            path: "/myapp",
-            debug: 3,
+            host: import.meta.env.VITE_PEER_HOST || "0.peerjs.com",
+            port: Number(import.meta.env.VITE_PEER_PORT || 443),
+            path: import.meta.env.VITE_PEER_PATH || "/",
+            debug: Number(import.meta.env.VITE_PEER_DEBUG || 0),
             config: {
                 iceServers: [
                     { urls: "stun:stun.l.google.com:19302" },
