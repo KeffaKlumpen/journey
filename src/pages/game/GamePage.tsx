@@ -59,7 +59,7 @@ function decideResult(votes: Vote[]): VoteOption {
 }
 
 function GamePage() {
-    const { gameState, players, peerId, hostId, role, subscribe, sendGameData, applyGameProgress, proposeCard, playCard, setCharacterName } = usePeer();
+    const { gameState, players, peerId, hostId, role, subscribe, sendGameData, applyGameProgress, proposeCard, playCard, setCharacterName: submitCharacterName, clearCharacterName } = usePeer();
     const navigate = useNavigate();
     const [proposal, setProposal] = useState<Proposal | null>(null);
     const [votes, setVotes] = useState<Vote[]>([]);
@@ -70,6 +70,7 @@ function GamePage() {
     const [prepDone, setPrepDone] = useState<string[]>([]);
     const [prepComplete, setPrepComplete] = useState(false);
     const [passedEncounters, setPassedEncounters] = useState<PassedEncounter[]>([]);
+    const [characterNameInput, setCharacterNameInput] = useState("");
 
     const currentAttemptsRef = useRef<ActionAttempt[]>([]);
     const passedEncountersRef = useRef<PassedEncounter[]>([]);
@@ -135,6 +136,14 @@ function GamePage() {
     useEffect(() => subscribe((message) => {
         if (message.type !== "game-data" || !isGameDataPayload(message.payload)) return;
         const payload = message.payload;
+
+        if (payload.kind === "prep-name-reset") {
+            const next = prepDoneRef.current.filter((id) => id !== payload.playerId);
+            prepDoneRef.current = next;
+            setPrepDone(next);
+            if (payload.playerId === peerId) setCharacterNameInput("");
+            return;
+        }
 
         if (payload.kind === "prep-done") {
             if (prepCompleteRef.current || payload.step !== prepStepRef.current) return;
@@ -328,8 +337,13 @@ function GamePage() {
     const handlePrepDone = (characterName?: string) => {
         const id = peerId ?? "";
         if (!id || prepCompleteRef.current || prepDoneRef.current.includes(id)) return;
-        if (characterName) setCharacterName(characterName);
+        if (characterName) submitCharacterName(characterName);
         sendGameData({ kind: "prep-done", playerId: id, step: prepStepRef.current });
+    };
+
+    const handleRemoveName = (playerId: string) => {
+        clearCharacterName(playerId);
+        if (playerId === peerId) setCharacterNameInput("");
     };
 
     const handleCardClick = (card: string) => {
@@ -380,6 +394,10 @@ function GamePage() {
                     players={players}
                     peerId={peerId}
                     onDone={handlePrepDone}
+                    canRemoveNames={role === "host"}
+                    onRemoveName={handleRemoveName}
+                    characterName={characterNameInput}
+                    onCharacterNameChange={setCharacterNameInput}
                 />
                 <QuestSidebar
                     quest={gameState.quest}

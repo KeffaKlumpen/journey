@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { Action, MainQuest } from "../../game/card-data";
 import type { Player } from "../../net/messages";
 import Hand from "./Hand";
@@ -13,6 +12,10 @@ type PrepPhaseProps = {
     players: Player[];
     peerId: string | undefined;
     onDone: (characterName?: string) => void;
+    canRemoveNames: boolean;
+    onRemoveName: (playerId: string) => void;
+    characterName: string;
+    onCharacterNameChange: (value: string) => void;
 };
 
 function PrepPhase({
@@ -25,8 +28,11 @@ function PrepPhase({
     players,
     peerId,
     onDone,
+    canRemoveNames,
+    onRemoveName,
+    characterName,
+    onCharacterNameChange,
 }: PrepPhaseProps) {
-    const [characterName, setCharacterName] = useState("");
     const isDone = donePlayers.includes(peerId ?? "");
     const isIdentityStep = step === totalSteps - 1;
     const needsName = isIdentityStep && characterName.trim() === "";
@@ -59,7 +65,7 @@ function PrepPhase({
                         <input
                             type="text"
                             value={characterName}
-                            onChange={(event) => setCharacterName(event.target.value)}
+                            onChange={(event) => onCharacterNameChange(event.target.value)}
                             disabled={isDone}
                             maxLength={40}
                             placeholder="Enter a name"
@@ -77,8 +83,18 @@ function PrepPhase({
                             ?? (player.id === peerId ? "You" : player.id.slice(0, 8));
                         return (
                             <li key={player.id} className={ready ? "ready" : undefined}>
-                                {label}
-                                {ready ? " ✓" : ""}
+                                <span>{label}</span>
+                                {ready && <span> ✓</span>}
+                                {isIdentityStep && canRemoveNames && player.characterName && (
+                                    <button
+                                        type="button"
+                                        className="remove-name"
+                                        title={`Remove ${player.characterName}'s name`}
+                                        onClick={() => onRemoveName(player.id)}
+                                    >
+                                        ×
+                                    </button>
+                                )}
                             </li>
                         );
                     })}

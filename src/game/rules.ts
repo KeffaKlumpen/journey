@@ -2,7 +2,7 @@ import type { VoteOption } from "../net/messages";
 import { type Action, actions, type Encounter, encounters, type MainQuest, mainQuests } from "./card-data";
 import { shuffle, type GameState } from "./game-state";
 
-const SUCCESS_REQUIRED = 1; //3;
+export const SUCCESS_REQUIRED = 1; //3;
 const ENCOUNTER_COUNT = 1; //5;
 
 export const DICE_COUNT: Record<VoteOption, number> = {

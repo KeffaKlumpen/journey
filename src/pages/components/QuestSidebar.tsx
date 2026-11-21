@@ -1,4 +1,5 @@
 import type { Action, Encounter, MainQuest } from "../../game/card-data";
+import { SUCCESS_REQUIRED } from "../../game/rules";
 
 export type ActionAttempt = {
     action: Action;
@@ -35,7 +36,7 @@ function QuestSidebar({ quest, passedEncounters, totalEncounters }: QuestSidebar
                                 {attempts.map((attempt, attemptIndex) => (
                                     <li key={attemptIndex}>
                                         {attempt.action} — +{attempt.gained} success
-                                        {attempt.gained === 1 ? "" : "es"} ({attempt.successes}/3)
+                                        {attempt.gained === 1 ? "" : "es"} ({attempt.successes}/{SUCCESS_REQUIRED})
                                     </li>
                                 ))}
                             </ul>

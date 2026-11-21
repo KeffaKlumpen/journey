@@ -387,6 +387,15 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         }
     }, [updateRosterName, send]);
 
+    const clearCharacterName = useCallback((playerId: string) => {
+        if (roleRef.current !== "host") return;
+        setRoster(playersRef.current.map((player) =>
+            player.id === playerId ? { ...player, characterName: undefined } : player
+        ));
+        broadcastRoster();
+        sendGameData({ kind: "prep-name-reset", playerId });
+    }, [setRoster, broadcastRoster, sendGameData]);
+
     const value: PeerContextValue = {
         status,
         peerId,
@@ -398,6 +407,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         applyGameProgress,
         playCard,
         setCharacterName,
+        clearCharacterName,
         startGame,
         leaveLobby,
         subscribe,

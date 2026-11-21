@@ -11,6 +11,7 @@ export type VoteOption = typeof VOTE_OPTIONS[number];
 
 export type GameDataPayload =
     | { kind: "prep-name"; playerId: string; characterName: string }
+    | { kind: "prep-name-reset"; playerId: string }
     | { kind: "prep-done"; playerId: string; step: number }
     | { kind: "prep-advance"; step: number }
     | { kind: "prep-complete" }
@@ -55,6 +56,7 @@ export function isGameDataPayload(value: unknown): value is GameDataPayload {
     const kind = (value as { kind: unknown }).kind;
     return (
         kind === "prep-name" ||
+        kind === "prep-name-reset" ||
         kind === "prep-done" ||
         kind === "prep-advance" ||
         kind === "prep-complete" ||

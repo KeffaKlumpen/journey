@@ -252,10 +252,30 @@
 }
 
 .prep-ready li {
+  display: flex;
+  align-items: center;
+  gap: 0.4vw;
   padding: 0.5vh 0.75vw;
   border: 1px solid var(--border);
   border-radius: 0.5vh;
   font-size: 0.5rem;
+}
+
+.remove-name {
+  padding: 0 0.3vw;
+  border: none;
+  border-radius: 0.3vh;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.remove-name:hover {
+  color: var(--accent);
+  background: var(--accent-bg);
 }
 
 .prep-ready li.ready {
