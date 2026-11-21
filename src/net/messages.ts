@@ -13,6 +13,11 @@ export type ChatMessage = {
     timestamp: number;
 };
 
+export type LobbyFeatures = {
+    textChat: boolean;
+    voiceChat: boolean;
+};
+
 export const VOTE_OPTIONS = ["BAD", "OK", "GOOD", "GREAT"] as const;
 export type VoteOption = typeof VOTE_OPTIONS[number];
 
@@ -43,7 +48,7 @@ export type GameDataPayload =
 
 export type LobbyMessage =
     | { type: "join"; player: Player }
-    | { type: "lobby-state"; players: Player[]; hostId: string }
+    | { type: "lobby-state"; players: Player[]; hostId: string; features: LobbyFeatures }
     | { type: "leave"; playerId: string }
     | { type: "lobby-closed" }
     | { type: "mute-state"; playerId: string; muted: boolean }

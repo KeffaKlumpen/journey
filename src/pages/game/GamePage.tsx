@@ -61,7 +61,7 @@ function decideResult(votes: Vote[]): VoteOption {
 }
 
 function GamePage() {
-    const { gameState, players, peerId, hostId, role, subscribe, sendGameData, applyGameProgress, proposeCard, playCard, setCharacterName: submitCharacterName, clearCharacterName } = usePeer();
+    const { gameState, players, peerId, hostId, role, features, subscribe, sendGameData, applyGameProgress, proposeCard, playCard, setCharacterName: submitCharacterName, clearCharacterName } = usePeer();
     const navigate = useNavigate();
     const [proposal, setProposal] = useState<Proposal | null>(null);
     const [votes, setVotes] = useState<Vote[]>([]);
@@ -385,8 +385,8 @@ function GamePage() {
             <div className="game-layout">
                 <aside className="player-sidebar">
                     <PlayerList players={players} peerId={peerId} hostId={hostId} />
-                    <AudioControls />
-                    <ChatWindow />
+                    {features.voiceChat && <AudioControls />}
+                    {features.textChat && <ChatWindow />}
                 </aside>
                 <PrepPhase
                     quest={gameState.quest}
@@ -426,8 +426,8 @@ function GamePage() {
         <div className="game-layout">
             <aside className="player-sidebar">
                 <PlayerList players={players} peerId={peerId} hostId={hostId} />
-                <AudioControls />
-                <ChatWindow />
+                {features.voiceChat && <AudioControls />}
+                {features.textChat && <ChatWindow />}
             </aside>
             <main className="game-board">
                 <EncounterCard encounter={encounter} successes={gameState.successes}></EncounterCard>

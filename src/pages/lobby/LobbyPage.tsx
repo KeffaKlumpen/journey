@@ -5,7 +5,7 @@ import ChatWindow from '../components/ChatWindow';
 import PlayerList from '../components/PlayerList';
 
 function LobbyPage() {
-    const { status, peerId, role, players, hostId, error, startGame, leaveLobby } = usePeer();
+    const { status, peerId, role, players, hostId, error, features, startGame, leaveLobby } = usePeer();
     const isHost = role === 'host';
 
     return (
@@ -22,8 +22,8 @@ function LobbyPage() {
 
             <div style={{width: "20vw"}}>
                 <PlayerList players={players} peerId={peerId} hostId={hostId} />
-                <AudioControls />
-                <ChatWindow />
+                {features.voiceChat && <AudioControls />}
+                {features.textChat && <ChatWindow />}
             </div>
 
             {isHost && <button onClick={startGame}>Start game</button>}

@@ -10,16 +10,30 @@ import { useNavigate, useSearchParams } from "react-router";
 import type { Action } from "../game/card-data";
 import { type GameState } from "../game/game-state";
 import { createEncounters, createGameState, createHand, createQuest } from "../game/rules";
-import { isLobbyMessage, type ChatMessage, type GameDataPayload, type LobbyMessage, type Player } from "./messages";
+import { isLobbyMessage, type ChatMessage, type GameDataPayload, type LobbyFeatures, type LobbyMessage, type Player } from "./messages";
 import { PeerContext, type PeerContextValue, type Role, type Status } from "./peer-context";
 
 type Proposal = Omit<Extract<GameDataPayload, { kind: "card-played" }>, "kind">;
+
+function featureEnabled(value: string | null): boolean {
+    return value !== "0";
+}
 
 export function PeerProvider({ children }: { children: ReactNode }) {
     const navigate = useNavigate();
     const navigateRef = useRef(navigate);
     const [searchParams] = useSearchParams();
-    const entryIdRef = useRef<string | null>(searchParams.get("entry"));
+    const entryId = searchParams.get("entry");
+    const entryIdRef = useRef<string | null>(entryId);
+    const [features, setFeatures] = useState<LobbyFeatures>(() => entryId
+        ? { textChat: false, voiceChat: false }
+        : {
+            textChat: featureEnabled(searchParams.get("textChat")),
+            voiceChat: featureEnabled(searchParams.get("voiceChat")),
+        });
+    const featuresRef = useRef<LobbyFeatures>(features);
+    const featuresKnownRef = useRef(entryId === null);
+    const voiceStartedRef = useRef(false);
 
     useEffect(() => {
         navigateRef.current = navigate;
@@ -89,6 +103,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             type: "lobby-state",
             players: playersRef.current,
             hostId: peerRef.current?.id ?? "",
+            features: featuresRef.current,
         });
     }, [broadcast]);
 
@@ -147,7 +162,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
     const syncVoiceConnections = useCallback(() => {
         const peer = peerRef.current;
         const stream = localStreamRef.current;
-        if (!peer || !stream || peer.destroyed) return;
+        if (!featuresRef.current.voiceChat || !peer || !stream || peer.destroyed) return;
         const ownId = peer.id;
 
         // Answer calls that arrived before the microphone stream was ready.
@@ -181,6 +196,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         }
         localStreamRef.current?.getTracks().forEach((track) => track.stop());
         localStreamRef.current = null;
+        voiceStartedRef.current = false;
         isMutedRef.current = true;
         setIsMuted(true);
         setUnmutedPlayerIds([]);
@@ -188,6 +204,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
     }, [closeVoiceConnection]);
 
     const toggleMute = useCallback(() => {
+        if (!featuresRef.current.voiceChat) return;
         const nextMuted = !isMutedRef.current;
         isMutedRef.current = nextMuted;
         setIsMuted(nextMuted);
@@ -234,6 +251,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         roleRef.current = null;
         leavingRef.current = false;
         activeProposalRef.current = null;
+        voiceStartedRef.current = false;
 
         const peer = new Peer({
             host: "localhost",
@@ -256,6 +274,38 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         const connections = connectionsRef.current;
         const handlers = handlersRef.current;
 
+        const startVoice = () => {
+            if (voiceStartedRef.current) return;
+            voiceStartedRef.current = true;
+            navigator.mediaDevices?.getUserMedia({ audio: true })
+                .then((stream) => {
+                    if (disposed) {
+                        stream.getTracks().forEach((track) => track.stop());
+                        return;
+                    }
+                    stream.getAudioTracks().forEach((track) => { track.enabled = false; });
+                    localStreamRef.current = stream;
+                    syncVoiceConnections();
+                })
+                .catch(() => {
+                    if (!disposed) setVoiceError("Microphone unavailable");
+                });
+        };
+
+        const applyFeatures = (next: LobbyFeatures) => {
+            const wasKnown = featuresKnownRef.current;
+            featuresRef.current = next;
+            featuresKnownRef.current = true;
+            setFeatures(next);
+            if (!next.voiceChat) {
+                for (const remoteId of [...pendingCallsRef.current.keys()]) {
+                    closeVoiceConnection(remoteId);
+                }
+            } else if (!wasKnown) {
+                startVoice();
+            }
+        };
+
         const handleMessage = (raw: unknown, from: DataConnection) => {
             if (disposed || !isLobbyMessage(raw)) return;
             const message = raw;
@@ -271,6 +321,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
                 }
                 case "lobby-state": {
                     if (roleRef.current === "guest") {
+                        applyFeatures(message.features);
                         setRoster(message.players);
                     }
                     break;
@@ -298,6 +349,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
                     break;
                 }
                 case "chat": {
+                    if (!featuresRef.current.textChat) break;
                     setChatMessages((current) => [...current, message.message]);
                     if (roleRef.current === "host" && from.peer !== peer.id) {
                         for (const [id, connection] of connections) {
@@ -387,19 +439,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             setPeerId(id);
             setStatus("connected");
 
-            navigator.mediaDevices?.getUserMedia({ audio: true })
-                .then((stream) => {
-                    if (disposed) {
-                        stream.getTracks().forEach((track) => track.stop());
-                        return;
-                    }
-                    stream.getAudioTracks().forEach((track) => { track.enabled = false; });
-                    localStreamRef.current = stream;
-                    syncVoiceConnections();
-                })
-                .catch(() => {
-                    if (!disposed) setVoiceError("Microphone unavailable");
-                });
+            if (featuresRef.current.voiceChat) startVoice();
 
             const entry = entryIdRef.current;
             if (entry) {
@@ -426,6 +466,10 @@ export function PeerProvider({ children }: { children: ReactNode }) {
 
         peer.on("call", (call) => {
             if (disposed) return;
+            if (featuresKnownRef.current && !featuresRef.current.voiceChat) {
+                call.close();
+                return;
+            }
             const remoteId = call.peer;
             if (mediaConnectionsRef.current.has(remoteId) || pendingCallsRef.current.has(remoteId)) {
                 closeVoiceConnection(remoteId);
@@ -579,6 +623,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
     }, [setRoster, broadcastRoster, sendGameData]);
 
     const sendChat = useCallback((text: string) => {
+        if (!featuresRef.current.textChat) return;
         const trimmed = text.trim();
         const id = peerRef.current?.id;
         if (!trimmed || !id) return;
@@ -618,6 +663,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         voiceError,
         chatMessages,
         sendChat,
+        features,
         startGame,
         leaveLobby,
         subscribe,

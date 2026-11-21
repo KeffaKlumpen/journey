@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
 import type { Action } from "../game/card-data";
 import type { GameState } from "../game/game-state";
-import type { ChatMessage, GameDataPayload, LobbyMessage, Player } from "./messages";
+import type { ChatMessage, GameDataPayload, LobbyFeatures, LobbyMessage, Player } from "./messages";
 
 export type Status = "connecting" | "connected" | "disconnected" | "error";
 export type Role = "host" | "guest" | null;
@@ -24,6 +24,7 @@ export type PeerContextValue = {
     voiceError: string | null;
     chatMessages: ChatMessage[];
     sendChat: (text: string) => void;
+    features: LobbyFeatures;
     startGame: () => void;
     leaveLobby: () => void;
     subscribe: (handler: (message: LobbyMessage) => void) => () => void;

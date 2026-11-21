@@ -9,7 +9,7 @@ type PlayerListProps = {
 };
 
 function PlayerList({ players, peerId, hostId, title = "Players" }: PlayerListProps) {
-    const { unmutedPlayerIds } = usePeer();
+    const { unmutedPlayerIds, features } = usePeer();
 
     return (
         <div className="player-list">
@@ -22,13 +22,15 @@ function PlayerList({ players, peerId, hostId, title = "Players" }: PlayerListPr
                             <span className="player-name" title={player.id}>
                                 {player.characterName ?? (player.id.length > 10 ? `${player.id.slice(0, 8)}…` : player.id)}
                             </span>
-                            <span
-                                className={`mic-status ${unmuted ? "unmuted" : "muted"}`}
-                                title={unmuted ? "Microphone on" : "Muted"}
-                                aria-label={unmuted ? "Microphone on" : "Muted"}
-                            >
-                                {unmuted ? "🎤" : "🔇"}
-                            </span>
+                            {features.voiceChat && (
+                                <span
+                                    className={`mic-status ${unmuted ? "unmuted" : "muted"}`}
+                                    title={unmuted ? "Microphone on" : "Muted"}
+                                    aria-label={unmuted ? "Microphone on" : "Muted"}
+                                >
+                                    {unmuted ? "🎤" : "🔇"}
+                                </span>
+                            )}
                             {player.id === peerId && <span className="player-tag">you</span>}
                             {player.id === hostId && <span className="player-tag">host</span>}
                         </li>
