@@ -1,4 +1,9 @@
 import type { VoteOption } from "../net/messages";
+import { type Action, actions, type Encounter, encounters, type MainQuest, mainQuests } from "./card-data";
+import { shuffle, type GameState } from "./game-state";
+
+const SUCCESS_REQUIRED = 1; //3;
+const ENCOUNTER_COUNT = 1; //5;
 
 export const DICE_COUNT: Record<VoteOption, number> = {
     BAD: 1,
@@ -31,7 +36,7 @@ export function resolveEncounter(
     const gained = dice.filter((die) => die >= 5).length;
     const total = successes + gained;
 
-    if (total < 3) {
+    if (total < SUCCESS_REQUIRED) {
         return {
             gained,
             encounterSuccesses: total,
@@ -62,3 +67,30 @@ export function resolveEncounter(
         gameOver: false,
     };
 }
+
+export function createHand(): Action[] {
+    return shuffle(actions).slice(0, 5);
+}
+
+export function createEncounters(): Encounter[] {
+    return shuffle(encounters).slice(0, ENCOUNTER_COUNT);
+}
+
+export function createQuest(): MainQuest {
+    return mainQuests[Math.floor(Math.random() * mainQuests.length)];
+}
+
+export function createGameState(
+    hand: Action[],
+    drawnEncounters: Encounter[],
+    quest: MainQuest
+): GameState {
+    return {
+        hand,
+        encounters: drawnEncounters,
+        quest,
+        currentEncounterIndex: 0,
+        successes: 0,
+    };
+}
+

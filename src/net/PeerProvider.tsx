@@ -8,7 +8,8 @@ import {
 import { Peer, type DataConnection } from "peerjs";
 import { useNavigate, useSearchParams } from "react-router";
 import type { Action } from "../game/card-data";
-import { createEncounters, createGameState, createHand, createQuest, type GameState } from "../game/game-state";
+import { type GameState } from "../game/game-state";
+import { createEncounters, createGameState, createHand, createQuest } from "../game/rules";
 import { isLobbyMessage, type GameDataPayload, type LobbyMessage, type Player } from "./messages";
 import { PeerContext, type PeerContextValue, type Role, type Status } from "./peer-context";
 
