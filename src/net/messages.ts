@@ -3,12 +3,14 @@ import type { GameState } from "../game/game-state";
 
 export type Player = {
     id: string;
+    characterName?: string;
 };
 
 export const VOTE_OPTIONS = ["BAD", "OK", "GOOD", "GREAT"] as const;
 export type VoteOption = typeof VOTE_OPTIONS[number];
 
 export type GameDataPayload =
+    | { kind: "prep-name"; playerId: string; characterName: string }
     | { kind: "prep-done"; playerId: string; step: number }
     | { kind: "prep-advance"; step: number }
     | { kind: "prep-complete" }
@@ -52,6 +54,7 @@ export function isGameDataPayload(value: unknown): value is GameDataPayload {
     if (typeof value !== "object" || value === null || !("kind" in value)) return false;
     const kind = (value as { kind: unknown }).kind;
     return (
+        kind === "prep-name" ||
         kind === "prep-done" ||
         kind === "prep-advance" ||
         kind === "prep-complete" ||

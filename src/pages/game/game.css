@@ -226,3 +226,40 @@
   cursor: default;
   opacity: 0.6;
 }
+
+.prep-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2vh;
+}
+
+.prep-identity .actionCard {
+  min-height: 12vh;
+  cursor: default;
+  font-size: 0.6rem;
+}
+
+.prep-identity .actionCard:hover {
+  border-color: var(--border);
+  background: var(--bg);
+}
+
+.prep-name-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1vh;
+  font-size: 0.55rem;
+  color: var(--text);
+}
+
+.prep-name-field input {
+  padding: 1vh 1vw;
+  border: 1px solid var(--accent-border);
+  border-radius: 0.5vh;
+  background: var(--bg);
+  color: var(--text-h);
+  font: inherit;
+  text-align: center;
+}

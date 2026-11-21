@@ -58,7 +58,7 @@ function decideResult(votes: Vote[]): VoteOption {
 }
 
 function GamePage() {
-    const { gameState, players, peerId, hostId, role, subscribe, sendGameData, applyGameProgress, proposeCard, playCard } = usePeer();
+    const { gameState, players, peerId, hostId, role, subscribe, sendGameData, applyGameProgress, proposeCard, playCard, setCharacterName } = usePeer();
     const navigate = useNavigate();
     const [proposal, setProposal] = useState<Proposal | null>(null);
     const [votes, setVotes] = useState<Vote[]>([]);
@@ -299,9 +299,10 @@ function GamePage() {
         }
     }), [subscribe, role, peerId, sendGameData, applyGameProgress, playCard, tryAdvancePrep]);
 
-    const handlePrepDone = () => {
+    const handlePrepDone = (characterName?: string) => {
         const id = peerId ?? "";
         if (!id || prepCompleteRef.current || prepDoneRef.current.includes(id)) return;
+        if (characterName) setCharacterName(characterName);
         sendGameData({ kind: "prep-done", playerId: id, step: prepStepRef.current });
     };
 
@@ -348,6 +349,7 @@ function GamePage() {
                     step={prepStep}
                     totalSteps={PREP_PROMPTS.length}
                     prompt={PREP_PROMPTS[prepStep]}
+                    hand={gameState.hand}
                     donePlayers={prepDone}
                     players={players}
                     peerId={peerId}

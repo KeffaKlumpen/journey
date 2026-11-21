@@ -82,6 +82,13 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         });
     }, [broadcast]);
 
+    const updateRosterName = useCallback((playerId: string, characterName: string) => {
+        setRoster(playersRef.current.map((player) =>
+            player.id === playerId ? { ...player, characterName } : player
+        ));
+        broadcastRoster();
+    }, [setRoster, broadcastRoster]);
+
     const applyGameProgress = useCallback((progress: Pick<GameState, "successes" | "currentEncounterIndex">) => {
         setGameState((current) => current ? { ...current, ...progress } : current);
     }, []);
@@ -167,6 +174,13 @@ export function PeerProvider({ children }: { children: ReactNode }) {
                 }
                 case "game-data": {
                     const payload = message.payload;
+                    if (payload.kind === "prep-name") {
+                        // Character names are requests; the host owns and rebroadcasts the roster.
+                        if (roleRef.current === "host") {
+                            updateRosterName(payload.playerId, payload.characterName);
+                        }
+                        break;
+                    }
                     if (payload.kind === "card-proposal") {
                         // Proposals are requests only; the host alone decides and announces the card.
                         if (roleRef.current === "host") {
@@ -276,7 +290,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             connections.clear();
             handlers.clear();
         };
-    }, [dispatch, send, broadcastRoster, setRoster, acceptProposal]);
+    }, [dispatch, send, broadcastRoster, setRoster, acceptProposal, updateRosterName]);
 
     const startGame = useCallback(() => {
         if (roleRef.current !== "host") return;
@@ -353,6 +367,25 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         }
     }, [acceptProposal, send]);
 
+    const setCharacterName = useCallback((characterName: string) => {
+        const trimmed = characterName.trim();
+        const id = peerRef.current?.id;
+        if (!trimmed || !id) return;
+
+        if (roleRef.current === "host") {
+            updateRosterName(id, trimmed);
+            return;
+        }
+
+        const hostConnection = connectionsRef.current.get(entryIdRef.current ?? "");
+        if (hostConnection) {
+            send(hostConnection, {
+                type: "game-data",
+                payload: { kind: "prep-name", playerId: id, characterName: trimmed },
+            });
+        }
+    }, [updateRosterName, send]);
+
     const value: PeerContextValue = {
         status,
         peerId,
@@ -363,6 +396,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         gameState,
         applyGameProgress,
         playCard,
+        setCharacterName,
         startGame,
         leaveLobby,
         subscribe,

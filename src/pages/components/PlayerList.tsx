@@ -15,7 +15,7 @@ function PlayerList({ players, peerId, hostId, title = "Players" }: PlayerListPr
                 {players.map((player) => (
                     <li key={player.id} className={player.id === peerId ? "you" : undefined}>
                         <span className="player-name" title={player.id}>
-                            {player.id.length > 10 ? `${player.id.slice(0, 8)}…` : player.id}
+                            {player.characterName ?? (player.id.length > 10 ? `${player.id.slice(0, 8)}…` : player.id)}
                         </span>
                         {player.id === peerId && <span className="player-tag">you</span>}
                         {player.id === hostId && <span className="player-tag">host</span>}
