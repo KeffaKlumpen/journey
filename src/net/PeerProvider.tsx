@@ -522,6 +522,9 @@ export function PeerProvider({ children }: { children: ReactNode }) {
     const startGame = useCallback(() => {
         if (roleRef.current !== "host") return;
         activeProposalRef.current = null;
+        // Each new game starts with fresh character names.
+        setRoster(playersRef.current.map(({ id }) => ({ id })));
+        broadcastRoster();
         const drawnEncounters = createEncounters();
         const quest = createQuest();
         const hands = new Map(playersRef.current.map((player) => [player.id, createHand()]));
@@ -538,7 +541,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         setGameState(game);
         dispatch(message);
         navigateRef.current("/game");
-    }, [dispatch, send]);
+    }, [dispatch, send, setRoster, broadcastRoster]);
 
     const leaveLobby = useCallback(() => {
         leavingRef.current = true;
