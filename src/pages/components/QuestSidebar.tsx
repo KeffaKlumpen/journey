@@ -1,6 +1,7 @@
 import type { Action, Encounter, MainQuest } from "../../game/card-data";
+import type { Hint } from "../../game/hints";
 import { SUCCESS_REQUIRED } from "../../game/rules";
-import HintCard, { type Hint } from "./Hint";
+import HintCard from "./Hint";
 
 export type ActionAttempt = {
     action: Action;

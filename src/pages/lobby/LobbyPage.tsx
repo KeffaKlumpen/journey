@@ -1,12 +1,26 @@
 import './lobby.css'
+import { useState } from 'react';
 import { usePeer } from '../../net/peer-context';
 import AudioControls from '../components/AudioControls';
 import ChatWindow from '../components/ChatWindow';
 import PlayerList from '../components/PlayerList';
 
+type CopyStatus = 'idle' | 'copied' | 'error';
+
 function LobbyPage() {
     const { status, peerId, role, players, hostId, error, features, startGame, leaveLobby } = usePeer();
     const isHost = role === 'host';
+    const [copyStatus, setCopyStatus] = useState<CopyStatus>('idle');
+
+    const handleCopyLink = async () => {
+        const link = `${window.location.origin}/lobby?entry=${encodeURIComponent(hostId ?? '')}`;
+        try {
+            await navigator.clipboard.writeText(link);
+            setCopyStatus('copied');
+        } catch {
+            setCopyStatus('error');
+        }
+    };
 
     return (
         <div>
@@ -15,7 +29,18 @@ function LobbyPage() {
             {peerId ? (
                 <div>
                     <p>Your peer ID: {peerId}</p>
-                    {isHost && <p>Share this ID with the players you want to invite.</p>}
+                    {isHost && (
+                        <>
+                            <p>Share this ID with the players you want to invite.</p>
+                            <button className="copy-link-button" onClick={handleCopyLink}>
+                                {copyStatus === 'copied'
+                                    ? 'Link copied!'
+                                    : copyStatus === 'error'
+                                        ? 'Copy failed'
+                                        : 'Copy invite link'}
+                            </button>
+                        </>
+                    )}
                 </div>
             ) : <p>Connecting...</p>}
             {!isHost && hostId && <p>Joining lobby: {hostId}</p>}
