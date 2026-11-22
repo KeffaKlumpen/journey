@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
+import { getHint } from "../../game/hints";
 import { DICE_COUNT, resolveEncounter, rollDice } from "../../game/rules";
 import { usePeer } from "../../net/peer-context";
 import {
@@ -380,6 +381,8 @@ function GamePage() {
         navigate("/lobby");
     };
 
+    const hint = getHint(prepStep, prepComplete);
+
     if (!gameState) {
         return null;
     }
@@ -411,6 +414,7 @@ function GamePage() {
                     quest={gameState.quest}
                     passedEncounters={passedEncounters}
                     totalEncounters={gameState.encounters.length}
+                    hint={hint}
                 />
             </div>
         );
@@ -441,6 +445,7 @@ function GamePage() {
                 quest={gameState.quest}
                 passedEncounters={passedEncounters}
                 totalEncounters={gameState.encounters.length}
+                hint={hint}
             />
             {result?.roll?.gameOver ? (
                 <GameOverPopup

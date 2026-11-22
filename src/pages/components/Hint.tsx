@@ -1,7 +1,4 @@
-export type Hint = {
-    title: string;
-    paragraph: string;
-};
+import type { Hint } from "../../game/hints";
 
 type HintProps = {
     hint: Hint;
