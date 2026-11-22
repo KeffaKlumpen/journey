@@ -376,6 +376,10 @@ function GamePage() {
         });
     };
 
+    const handleBackToLobby = () => {
+        navigate("/lobby");
+    };
+
     if (!gameState) {
         return null;
     }
@@ -443,7 +447,7 @@ function GamePage() {
                     card={result.card}
                     result={result.result}
                     roll={result.roll}
-                    onClose={() => setResult(null)}
+                    onBackToLobby={handleBackToLobby}
                 />
             ) : result ? (
                 <ResultPopup
