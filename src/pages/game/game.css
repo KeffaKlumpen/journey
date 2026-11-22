@@ -139,6 +139,8 @@
   min-width: 180px;
   padding: 2vh 1vw;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   border-left: 1px solid var(--border);
   background: var(--social-bg);
   text-align: left;
@@ -146,7 +148,8 @@
 }
 
 .quest-info h2,
-.quest-progress h2 {
+.quest-progress h2,
+.hint-list h2 {
   margin: 0 0 1vh;
   font-size: 0.7rem;
 }
@@ -190,6 +193,56 @@
 .quest-empty {
   font-size: 0.5rem;
   color: var(--text);
+}
+
+.hint-list {
+  margin-top: auto;
+  padding-top: 3vh;
+}
+
+.hint {
+  margin-bottom: 2vh;
+  padding: 0.75vh 0.75vw;
+  border: 1px solid var(--border);
+  border-radius: 0.5vh;
+}
+
+.hint-title {
+  margin: 0 0 0.5vh;
+  font-size: 0.45rem;
+  font-style: italic;
+  color: var(--text);
+}
+
+.hint-paragraph {
+  margin: 0;
+  font-size: 0.5rem;
+  color: var(--text);
+}
+
+.hint-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5vw;
+  margin-top: 1vh;
+  font-size: 0.45rem;
+}
+
+.hint-nav button {
+  padding: 0.5vh 0.75vw;
+  border: 1px solid var(--accent-border);
+  border-radius: 0.5vh;
+  background: var(--accent-bg);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 0.45rem;
+  cursor: pointer;
+}
+
+.hint-nav button:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .prep-phase {
