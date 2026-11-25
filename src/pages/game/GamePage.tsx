@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
+import type { Action } from "../../game/card-data";
 import { getHint } from "../../game/hints";
 import { DICE_COUNT, resolveEncounter, rollDice } from "../../game/rules";
 import { usePeer } from "../../net/peer-context";
 import {
     isGameDataPayload,
     VOTE_OPTIONS,
+    type GameSyncState,
     type Player,
     type VoteOption,
 } from "../../net/messages";
 import AudioControls from "../components/AudioControls";
 import CardPopup from "../components/CardPopup";
+import ConnectionBanner from "../components/ConnectionBanner";
 import ChatWindow from "../components/ChatWindow";
 import EncounterCard from "../components/EncounterCard";
 import Hand from "../components/Hand";
@@ -62,7 +65,7 @@ function decideResult(votes: Vote[]): VoteOption {
 }
 
 function GamePage() {
-    const { gameState, players, peerId, hostId, role, features, subscribe, sendGameData, applyGameProgress, proposeCard, playCard, setCharacterName: submitCharacterName, clearCharacterName } = usePeer();
+    const { gameState, players, peerId, hostId, role, features, subscribe, sendGameData, applyGameProgress, syncGameState, registerSyncSource, proposeCard, playCard, setCharacterName: submitCharacterName, clearCharacterName } = usePeer();
     const navigate = useNavigate();
     const [proposal, setProposal] = useState<Proposal | null>(null);
     const [votes, setVotes] = useState<Vote[]>([]);
@@ -88,6 +91,7 @@ function GamePage() {
     const rollRequestedRef = useRef(false);
     const playersRef = useRef<Player[]>(players);
     const gameStateRef = useRef(gameState);
+    const resultRef = useRef<Result | null>(null);
 
     useEffect(() => {
         playersRef.current = players;
@@ -136,7 +140,133 @@ function GamePage() {
         setRollRequested(false);
     };
 
+    const setResultState = (next: Result | null) => {
+        resultRef.current = next;
+        setResult(next);
+    };
+
+    const buildSyncState = useCallback((): GameSyncState | null => {
+        const game = gameStateRef.current;
+        if (!game) return null;
+        const proposal = proposalRef.current;
+        const result = resultRef.current;
+        return {
+            game,
+            prep: {
+                step: prepStepRef.current,
+                done: prepDoneRef.current,
+                complete: prepCompleteRef.current,
+            },
+            proposal: proposal
+                ? { proposalId: proposal.id, proposerId: proposal.proposerId, card: proposal.card as Action }
+                : null,
+            votes: votesRef.current.map((vote) => ({ ...vote })),
+            result: result ? {
+                proposalId: result.id,
+                proposerId: result.proposerId,
+                card: result.card as Action,
+                result: result.result,
+                roll: result.roll,
+            } : null,
+            passedEncounters: passedEncountersRef.current.map(({ encounter, attempts }) => ({
+                encounter,
+                attempts: attempts.map((attempt) => ({ ...attempt })),
+            })),
+            currentAttempts: currentAttemptsRef.current.map((attempt) => ({ ...attempt })),
+            lastEncounterIndex: lastEncounterIndexRef.current,
+            // The provider fills these in from its own authoritative state.
+            unmutedPlayerIds: [],
+            chatMessages: [],
+        };
+    }, []);
+
+    useEffect(() => registerSyncSource(buildSyncState), [registerSyncSource, buildSyncState]);
+
+    // A vote stays open while a player is reconnecting. When the roster settles,
+    // decide using the votes that did arrive.
+    const decideVoteIfComplete = useCallback(() => {
+        if (role !== "host") return;
+        const current = proposalRef.current;
+        if (!current) return;
+        const others = playersRef.current.filter((player) => player.id !== current.proposerId);
+        const votesForProposal = votesRef.current.filter((vote) => vote.proposalId === current.id);
+        const voters = new Set(votesForProposal.map((vote) => vote.voterId));
+        if (others.length !== 0 && !others.every((player) => voters.has(player.id))) return;
+
+        const outcome = decideResult(votesForProposal);
+        const pending: PendingRoll = {
+            id: current.id,
+            proposerId: current.proposerId,
+            card: current.card,
+            result: outcome,
+        };
+        pendingRollRef.current = pending;
+        clearProposal();
+        resetRoll();
+        sendGameData({
+            kind: "vote-result",
+            proposalId: pending.id,
+            proposerId: pending.proposerId,
+            card: pending.card,
+            result: pending.result,
+        });
+    }, [role, sendGameData]);
+
+    useEffect(() => {
+        decideVoteIfComplete();
+    }, [players, decideVoteIfComplete]);
+
     useEffect(() => subscribe((message) => {
+        if (message.type === "game-sync") {
+            if (role !== "guest") return;
+            const sync = message.sync;
+            if (sync.game) {
+                gameStateRef.current = sync.game;
+                syncGameState(sync.game);
+            }
+            prepStepRef.current = sync.prep.step;
+            setPrepStep(sync.prep.step);
+            prepDoneRef.current = [...sync.prep.done];
+            setPrepDone(prepDoneRef.current);
+            prepCompleteRef.current = sync.prep.complete;
+            setPrepComplete(sync.prep.complete);
+            currentAttemptsRef.current = sync.currentAttempts;
+            passedEncountersRef.current = sync.passedEncounters;
+            setPassedEncounters(sync.passedEncounters);
+            lastEncounterIndexRef.current = sync.lastEncounterIndex;
+
+            const nextProposal = sync.proposal
+                ? {
+                    id: sync.proposal.proposalId,
+                    proposerId: sync.proposal.proposerId,
+                    card: sync.proposal.card,
+                }
+                : null;
+            proposalRef.current = nextProposal;
+            setProposal(nextProposal);
+            const nextVotes = sync.votes.map((vote) => ({ ...vote }));
+            votesRef.current = nextVotes;
+            setVotes(nextVotes);
+            const voted = !!nextProposal
+                && nextVotes.some((vote) => vote.proposalId === nextProposal.id && vote.voterId === peerId);
+            hasVotedRef.current = voted;
+            setHasVoted(voted);
+
+            const nextResult = sync.result
+                ? {
+                    id: sync.result.proposalId,
+                    proposerId: sync.result.proposerId,
+                    card: sync.result.card,
+                    result: sync.result.result,
+                    roll: sync.result.roll,
+                }
+                : null;
+            setResultState(nextResult);
+            pendingRollRef.current = null;
+            resetRoll();
+            return;
+        }
+
         if (message.type !== "game-data" || !isGameDataPayload(message.payload)) return;
         const payload = message.payload;
 
@@ -186,7 +316,7 @@ function GamePage() {
             proposalRef.current = next;
             votesRef.current = [];
             hasVotedRef.current = false;
-            setResult(null);
+            setResultState(null);
             setProposal(next);
             setVotes([]);
             setHasVoted(false);
@@ -206,39 +336,14 @@ function GamePage() {
                 }];
             votesRef.current = next;
             setVotes(next);
-
-            const current = proposalRef.current;
-            if (role !== "host" || !current || current.id !== payload.proposalId) return;
-            const others = playersRef.current.filter((player) => player.id !== current.proposerId);
-            const voters = new Set(next
-                .filter((vote) => vote.proposalId === current.id)
-                .map((vote) => vote.voterId));
-            if (others.length === 0 || others.every((player) => voters.has(player.id))) {
-                const outcome = decideResult(next.filter((vote) => vote.proposalId === current.id));
-                const pending: PendingRoll = {
-                    id: current.id,
-                    proposerId: current.proposerId,
-                    card: current.card,
-                    result: outcome,
-                };
-                pendingRollRef.current = pending;
-                clearProposal();
-                resetRoll();
-                sendGameData({
-                    kind: "vote-result",
-                    proposalId: pending.id,
-                    proposerId: pending.proposerId,
-                    card: pending.card,
-                    result: pending.result,
-                });
-            }
+            decideVoteIfComplete();
             return;
         }
 
         if (payload.kind === "vote-result") {
             clearProposal();
             resetRoll();
-            setResult({
+            setResultState({
                 id: payload.proposalId,
                 proposerId: payload.proposerId,
                 card: payload.card,
@@ -322,7 +427,7 @@ function GamePage() {
             lastEncounterIndexRef.current = payload.currentEncounterIndex;
 
             resetRoll();
-            setResult({
+            setResultState({
                 id: payload.proposalId,
                 proposerId: payload.proposerId,
                 card: payload.card,
@@ -335,7 +440,10 @@ function GamePage() {
                 },
             });
         }
-    }), [subscribe, role, peerId, sendGameData, applyGameProgress, playCard, tryAdvancePrep]);
+    }), [
+        subscribe, role, peerId, sendGameData, applyGameProgress, syncGameState,
+        playCard, tryAdvancePrep, decideVoteIfComplete,
+    ]);
 
     const handlePrepDone = (characterName?: string) => {
         const id = peerId ?? "";
@@ -390,6 +498,7 @@ function GamePage() {
     if (!prepComplete) {
         return (
             <div className="game-layout">
+                <ConnectionBanner />
                 <aside className="player-sidebar">
                     <PlayerList players={players} peerId={peerId} hostId={hostId} />
                     {features.voiceChat && <AudioControls />}
@@ -432,6 +541,7 @@ function GamePage() {
 
     return (
         <div className="game-layout">
+            <ConnectionBanner />
             <aside className="player-sidebar">
                 <PlayerList players={players} peerId={peerId} hostId={hostId} />
                 {features.voiceChat && <AudioControls />}
@@ -463,7 +573,7 @@ function GamePage() {
                     canRoll={result.proposerId === peerId && !result.roll && !rollRequested}
                     roll={result.roll}
                     onRoll={handleRoll}
-                    onClose={() => setResult(null)}
+                    onClose={() => setResultState(null)}
                 />
             ) : proposal ? (
                 <CardPopup

@@ -33,6 +33,9 @@ function PlayerList({ players, peerId, hostId, title = "Players" }: PlayerListPr
                             )}
                             {player.id === peerId && <span className="player-tag">you</span>}
                             {player.id === hostId && <span className="player-tag">host</span>}
+                            {player.connected === false && (
+                                <span className="player-tag reconnecting" title="Reconnecting…">reconnecting…</span>
+                            )}
                         </li>
                     );
                 })}

@@ -70,6 +70,12 @@
   color: var(--text-h);
 }
 
+.player-tag.reconnecting {
+  background: transparent;
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+}
+
 .popup-backdrop {
   position: fixed;
   inset: 0;

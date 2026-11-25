@@ -1,10 +1,15 @@
 import { createContext, useContext } from "react";
 import type { Action } from "../game/card-data";
 import type { GameState } from "../game/game-state";
-import type { ChatMessage, GameDataPayload, LobbyFeatures, LobbyMessage, Player } from "./messages";
+import type { ChatMessage, GameDataPayload, GameSyncState, LobbyFeatures, LobbyMessage, Player } from "./messages";
 
-export type Status = "connecting" | "connected" | "disconnected" | "error";
+export type Status = "connecting" | "connected" | "reconnecting" | "disconnected" | "error";
 export type Role = "host" | "guest" | null;
+
+export type ReconnectInfo = {
+    attempt: number;
+    maxAttempts: number;
+};
 
 export type PeerContextValue = {
     status: Status;
@@ -13,7 +18,11 @@ export type PeerContextValue = {
     players: Player[];
     hostId: string | null;
     error: string | null;
+    reconnect: ReconnectInfo | null;
+    retryNow: () => void;
     gameState: GameState | null;
+    syncGameState: (game: GameState) => void;
+    registerSyncSource: (source: () => GameSyncState | null) => () => void;
     applyGameProgress: (progress: Pick<GameState, "successes" | "currentEncounterIndex">) => void;
     playCard: (card: Action) => void;
     setCharacterName: (characterName: string) => void;

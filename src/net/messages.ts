@@ -1,9 +1,11 @@
-import type { Action } from "../game/card-data";
+import type { Action, Encounter } from "../game/card-data";
 import type { GameState } from "../game/game-state";
 
 export type Player = {
     id: string;
     characterName?: string;
+    /** False while this player is temporarily disconnected and may rejoin. */
+    connected?: boolean;
 };
 
 export type ChatMessage = {
@@ -46,6 +48,56 @@ export type GameDataPayload =
         gameOver: boolean;
     };
 
+export type GameProposal = {
+    proposalId: string;
+    proposerId: string;
+    card: Action;
+};
+
+export type GameVote = {
+    proposalId: string;
+    voterId: string;
+    vote: VoteOption;
+};
+
+export type ActionAttemptState = {
+    action: Action;
+    gained: number;
+    successes: number;
+};
+
+export type PassedEncounterState = {
+    encounter: Encounter;
+    attempts: ActionAttemptState[];
+};
+
+export type SyncResult = {
+    proposalId: string;
+    proposerId: string;
+    card: Action;
+    result: VoteOption;
+    roll?: {
+        dice: number[];
+        gained: number;
+        encounterSuccesses: number;
+        gameOver: boolean;
+    };
+};
+
+/** Everything a guest needs to resume a session after a network interruption. */
+export type GameSyncState = {
+    game: GameState | null;
+    prep: { step: number; done: string[]; complete: boolean };
+    proposal: GameProposal | null;
+    votes: GameVote[];
+    result: SyncResult | null;
+    passedEncounters: PassedEncounterState[];
+    currentAttempts: ActionAttemptState[];
+    lastEncounterIndex: number;
+    unmutedPlayerIds: string[];
+    chatMessages: ChatMessage[];
+};
+
 export type LobbyMessage =
     | { type: "join"; player: Player }
     | { type: "lobby-state"; players: Player[]; hostId: string; features: LobbyFeatures }
@@ -54,7 +106,11 @@ export type LobbyMessage =
     | { type: "mute-state"; playerId: string; muted: boolean }
     | { type: "chat"; message: ChatMessage }
     | { type: "start-game"; game: GameState }
-    | { type: "game-data"; payload: GameDataPayload };
+    | { type: "game-data"; payload: GameDataPayload }
+    | { type: "ping" }
+    | { type: "pong" }
+    | { type: "resync-request"; playerId: string }
+    | { type: "game-sync"; sync: GameSyncState };
 
 export function isLobbyMessage(value: unknown): value is LobbyMessage {
     return (

@@ -2,13 +2,14 @@ import './lobby.css'
 import { useState } from 'react';
 import { usePeer } from '../../net/peer-context';
 import AudioControls from '../components/AudioControls';
+import ConnectionBanner from '../components/ConnectionBanner';
 import ChatWindow from '../components/ChatWindow';
 import PlayerList from '../components/PlayerList';
 
 type CopyStatus = 'idle' | 'copied' | 'error';
 
 function LobbyPage() {
-    const { status, peerId, role, players, hostId, error, features, startGame, leaveLobby } = usePeer();
+    const { status, peerId, role, players, hostId, features, startGame, leaveLobby } = usePeer();
     const isHost = role === 'host';
     const [copyStatus, setCopyStatus] = useState<CopyStatus>('idle');
 
@@ -24,8 +25,8 @@ function LobbyPage() {
 
     return (
         <div>
+            <ConnectionBanner />
             <p>Status: {status}</p>
-            {error && <p className="error">{error}</p>}
             {peerId ? (
                 <div>
                     {isHost ? (
@@ -51,7 +52,7 @@ function LobbyPage() {
                 {features.textChat && <ChatWindow />}
             </div>
 
-            {isHost && <button onClick={startGame}>Start game</button>}
+            {isHost && <button onClick={startGame} disabled={status !== "connected"}>Start game</button>}
             <button onClick={leaveLobby}>{isHost ? 'Close lobby' : 'Leave lobby'}</button>
         </div>
     )

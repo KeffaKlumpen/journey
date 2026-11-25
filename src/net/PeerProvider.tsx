@@ -11,12 +11,41 @@ import type { Action } from "../game/card-data";
 import { type GameState } from "../game/game-state";
 import { createEncounters, createGameState, createHand, createQuest } from "../game/rules";
 import { generateLobbyCode, normalizeLobbyCode } from "./lobby-code";
-import { isLobbyMessage, type ChatMessage, type GameDataPayload, type LobbyFeatures, type LobbyMessage, type Player } from "./messages";
-import { PeerContext, type PeerContextValue, type Role, type Status } from "./peer-context";
+import {
+    isLobbyMessage,
+    type ChatMessage,
+    type GameDataPayload,
+    type GameSyncState,
+    type LobbyFeatures,
+    type LobbyMessage,
+    type Player,
+} from "./messages";
+import { PeerContext, type PeerContextValue, type ReconnectInfo, type Role, type Status } from "./peer-context";
 
 type Proposal = Omit<Extract<GameDataPayload, { kind: "card-played" }>, "kind">;
 
 const MAX_CODE_ATTEMPTS = 5;
+const MAX_RECONNECT_ATTEMPTS = 10;
+const MAX_RECONNECT_DELAY_MS = 30_000;
+const PING_INTERVAL_MS = 3_000;
+const PONG_TIMEOUT_MS = 9_000;
+const ROSTER_GRACE_MS = 12_000;
+
+const TRANSIENT_ERRORS = new Set([
+    "network",
+    "socket-error",
+    "socket-closed",
+    "peer-unavailable",
+    "negotiation-failed",
+    "connection-closed",
+    "not-open-yet",
+    "webrtc",
+    "disconnected",
+]);
+
+function isTransientError(type: string): boolean {
+    return TRANSIENT_ERRORS.has(type);
+}
 
 function featureEnabled(value: string | null): boolean {
     return value !== "0";
@@ -55,6 +84,13 @@ export function PeerProvider({ children }: { children: ReactNode }) {
     const pendingCallsRef = useRef<Map<string, MediaConnection>>(new Map());
     const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
     const isMutedRef = useRef(true);
+    const gameStateRef = useRef<PeerContextValue["gameState"]>(null);
+    const sessionIdRef = useRef<string | null>(null);
+    const handsRef = useRef<Map<string, Action[]>>(new Map());
+    const unmutedPlayerIdsRef = useRef<string[]>([]);
+    const chatMessagesRef = useRef<ChatMessage[]>([]);
+    const syncSourceRef = useRef<(() => GameSyncState | null) | null>(null);
+    const retryNowRef = useRef<(() => void) | null>(null);
 
     const [status, setStatus] = useState<Status>("connecting");
     const [peerId, setPeerId] = useState<string | undefined>(undefined);
@@ -62,11 +98,16 @@ export function PeerProvider({ children }: { children: ReactNode }) {
     const [players, setPlayers] = useState<Player[]>([]);
     const [hostId, setHostId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [reconnect, setReconnect] = useState<ReconnectInfo | null>(null);
     const [gameState, setGameState] = useState<PeerContextValue["gameState"]>(null);
     const [isMuted, setIsMuted] = useState(true);
     const [unmutedPlayerIds, setUnmutedPlayerIds] = useState<string[]>([]);
     const [voiceError, setVoiceError] = useState<string | null>(null);
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+
+    useEffect(() => {
+        gameStateRef.current = gameState;
+    }, [gameState]);
 
     const dispatch = useCallback((message: LobbyMessage) => {
         for (const handler of handlersRef.current) {
@@ -85,10 +126,32 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         }
     }, [send]);
 
+    const syncGameState = useCallback((game: GameState) => {
+        gameStateRef.current = game;
+        setGameState(game);
+    }, []);
+
+    const registerSyncSource = useCallback((source: () => GameSyncState | null) => {
+        syncSourceRef.current = source;
+        return () => {
+            if (syncSourceRef.current === source) syncSourceRef.current = null;
+        };
+    }, []);
+
     // Only the host accepts proposals, so there is a single active vote at a time.
     const acceptProposal = useCallback((proposal: Proposal) => {
         if (activeProposalRef.current) return;
         activeProposalRef.current = proposal;
+        const hand = handsRef.current.get(proposal.proposerId);
+        if (hand) {
+            const index = hand.indexOf(proposal.card);
+            if (index !== -1) {
+                handsRef.current.set(proposal.proposerId, [
+                    ...hand.slice(0, index),
+                    ...hand.slice(index + 1),
+                ]);
+            }
+        }
         const message: LobbyMessage = {
             type: "game-data",
             payload: { kind: "card-played", ...proposal },
@@ -106,7 +169,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         broadcast({
             type: "lobby-state",
             players: playersRef.current,
-            hostId: peerRef.current?.id ?? "",
+            hostId: sessionIdRef.current ?? "",
             features: featuresRef.current,
         });
     }, [broadcast]);
@@ -119,11 +182,13 @@ export function PeerProvider({ children }: { children: ReactNode }) {
     }, [setRoster, broadcastRoster]);
 
     const recordMuteState = useCallback((playerId: string, muted: boolean) => {
-        setUnmutedPlayerIds((current) => {
-            const present = current.includes(playerId);
-            if (muted) return present ? current.filter((id) => id !== playerId) : current;
-            return present ? current : [...current, playerId];
-        });
+        const current = unmutedPlayerIdsRef.current;
+        const present = current.includes(playerId);
+        const next = muted
+            ? (present ? current.filter((id) => id !== playerId) : current)
+            : (present ? current : [...current, playerId]);
+        unmutedPlayerIdsRef.current = next;
+        setUnmutedPlayerIds(next);
     }, []);
 
     const attachRemoteStream = useCallback((remoteId: string, stream: MediaStream) => {
@@ -166,7 +231,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
     const syncVoiceConnections = useCallback(() => {
         const peer = peerRef.current;
         const stream = localStreamRef.current;
-        if (!featuresRef.current.voiceChat || !peer || !stream || peer.destroyed) return;
+        if (!featuresRef.current.voiceChat || !peer || !stream || peer.destroyed || !peer.id) return;
         const ownId = peer.id;
 
         // Answer calls that arrived before the microphone stream was ready.
@@ -203,6 +268,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         voiceStartedRef.current = false;
         isMutedRef.current = true;
         setIsMuted(true);
+        unmutedPlayerIdsRef.current = [];
         setUnmutedPlayerIds([]);
         setVoiceError(null);
     }, [closeVoiceConnection]);
@@ -256,6 +322,20 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         leavingRef.current = false;
         activeProposalRef.current = null;
         voiceStartedRef.current = false;
+        handsRef.current.clear();
+        sessionIdRef.current = null;
+        unmutedPlayerIdsRef.current = [];
+        chatMessagesRef.current = [];
+
+        let peer: Peer;
+        let codeAttempts = 0;
+        let assignedPeerId: string | undefined;
+        let retryLoopActive = false;
+        let retryAttempt = 0;
+        let reconnectTimer: number | null = null;
+        let pingTimer: number | null = null;
+        let offline = typeof navigator !== "undefined" && !navigator.onLine;
+        let hostConnectionWasLive = false;
 
         const peerOptions = {
             host: import.meta.env.VITE_PEER_HOST || "0.peerjs.com",
@@ -274,11 +354,88 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             },
         };
 
-        let peer: Peer;
-        let codeAttempts = 0;
-
         const connections = connectionsRef.current;
         const handlers = handlersRef.current;
+        const lastPongAt = new Map<string, number>();
+        const rosterGraceTimers = new Map<string, number>();
+        const reconnectingPlayers = new Set<string>();
+
+        const clearRetryTimer = () => {
+            if (reconnectTimer !== null) {
+                window.clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+        };
+
+        const cancelRosterGrace = (remoteId: string) => {
+            const timer = rosterGraceTimers.get(remoteId);
+            if (timer !== undefined) window.clearTimeout(timer);
+            rosterGraceTimers.delete(remoteId);
+            reconnectingPlayers.delete(remoteId);
+        };
+
+        const onRecoverySuccess = () => {
+            if (disposed || leavingRef.current) return;
+            clearRetryTimer();
+            retryAttempt = 0;
+            retryLoopActive = false;
+            setStatus("connected");
+            setError(null);
+            setReconnect(null);
+        };
+
+        const buildSyncState = (remoteId: string): GameSyncState => {
+            const snapshot = syncSourceRef.current?.() ?? null;
+            const game = snapshot?.game ?? gameStateRef.current;
+            const hand = handsRef.current.get(remoteId);
+            return {
+                game: game && hand ? { ...game, hand } : game,
+                prep: snapshot?.prep ?? { step: 0, done: [], complete: false },
+                proposal: snapshot?.proposal ?? null,
+                votes: snapshot?.votes ?? [],
+                result: snapshot?.result ?? null,
+                passedEncounters: snapshot?.passedEncounters ?? [],
+                currentAttempts: snapshot?.currentAttempts ?? [],
+                lastEncounterIndex: snapshot?.lastEncounterIndex ?? 0,
+                unmutedPlayerIds: unmutedPlayerIdsRef.current,
+                chatMessages: chatMessagesRef.current,
+            };
+        };
+
+        const sendSyncTo = (connection: DataConnection) => {
+            send(connection, { type: "game-sync", sync: buildSyncState(connection.peer) });
+        };
+
+        const markPlayerConnected = (remoteId: string): boolean => {
+            cancelRosterGrace(remoteId);
+            const known = playersRef.current.some((player) => player.id === remoteId);
+            setRoster(known
+                ? playersRef.current.map((player) =>
+                    player.id === remoteId ? { ...player, connected: true } : player)
+                : [...playersRef.current, { id: remoteId, connected: true }]);
+            return known;
+        };
+
+        const markPlayerReconnecting = (remoteId: string) => {
+            if (rosterGraceTimers.has(remoteId)) return;
+            reconnectingPlayers.add(remoteId);
+            closeVoiceConnection(remoteId);
+            setRoster(playersRef.current.map((player) =>
+                player.id === remoteId ? { ...player, connected: false } : player));
+            broadcastRoster();
+
+            const timer = window.setTimeout(() => {
+                rosterGraceTimers.delete(remoteId);
+                if (disposed || leavingRef.current || roleRef.current !== "host") return;
+                if (playersRef.current.some((player) =>
+                    player.id === remoteId && player.connected === false)) {
+                    reconnectingPlayers.delete(remoteId);
+                    setRoster(playersRef.current.filter((player) => player.id !== remoteId));
+                    broadcastRoster();
+                }
+            }, ROSTER_GRACE_MS);
+            rosterGraceTimers.set(remoteId, timer);
+        };
 
         const startVoice = () => {
             if (voiceStartedRef.current) return;
@@ -312,16 +469,133 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             }
         };
 
+        const beginRetry = () => {
+            if (disposed || leavingRef.current) return;
+            if (!retryLoopActive) {
+                retryLoopActive = true;
+                retryAttempt = 0;
+            }
+            setError(null);
+            setStatus("reconnecting");
+            setReconnect({ attempt: Math.min(retryAttempt + 1, MAX_RECONNECT_ATTEMPTS), maxAttempts: MAX_RECONNECT_ATTEMPTS });
+            scheduleRetry();
+        };
+
+        const scheduleRetry = (immediate = false) => {
+            if (disposed || leavingRef.current || !retryLoopActive || reconnectTimer !== null) return;
+            if (offline && !immediate) return;
+            if (retryAttempt >= MAX_RECONNECT_ATTEMPTS) {
+                setStatus("error");
+                setError("Connection lost. Try again or leave the lobby.");
+                setReconnect(null);
+                return;
+            }
+            const delay = immediate ? 0 : Math.min(1000 * 2 ** retryAttempt, MAX_RECONNECT_DELAY_MS);
+            setStatus("reconnecting");
+            setReconnect({ attempt: retryAttempt + 1, maxAttempts: MAX_RECONNECT_ATTEMPTS });
+            reconnectTimer = window.setTimeout(() => {
+                reconnectTimer = null;
+                if (disposed || leavingRef.current || offline) return;
+                retryAttempt += 1;
+                attemptRecovery();
+                scheduleRetry();
+            }, delay);
+        };
+
+        const resetVoiceConnections = () => {
+            for (const remoteId of [
+                ...mediaConnectionsRef.current.keys(),
+                ...pendingCallsRef.current.keys(),
+            ]) {
+                closeVoiceConnection(remoteId);
+            }
+        };
+
+        const attemptRecovery = () => {
+            if (disposed || leavingRef.current) return;
+            const current = peerRef.current;
+            try {
+                if (!current || current.destroyed) {
+                    createPeer(assignedPeerId ?? (entryIdRef.current ? undefined : generateLobbyCode()));
+                } else if (current.disconnected) {
+                    current.reconnect();
+                } else if (current.open) {
+                    recoverDataConnections();
+                }
+            } catch {
+                // A failed synchronous attempt just falls through to the next retry.
+            }
+        };
+
+        const recoverDataConnections = () => {
+            const current = peerRef.current;
+            if (!current || current.destroyed || current.disconnected || !current.open) return;
+            if (roleRef.current === "guest") {
+                const hostId = entryIdRef.current;
+                if (!hostId) return;
+                const existing = connections.get(hostId);
+                if (existing?.open) {
+                    if (hostConnectionWasLive) {
+                        hostConnectionWasLive = false;
+                        send(existing, { type: "resync-request", playerId: assignedPeerId ?? "" });
+                    }
+                    return;
+                }
+                if (existing) return; // Still connecting; wait for it to open or close.
+                hostConnectionWasLive = true;
+                registerConnection(current.connect(hostId));
+                return;
+            }
+            if (roleRef.current === "host") {
+                for (const [remoteId, connection] of [...connections]) {
+                    if (!connection.open) {
+                        connection.close();
+                        connections.delete(remoteId);
+                        lastPongAt.delete(remoteId);
+                        markPlayerReconnecting(remoteId);
+                    }
+                }
+                broadcastRoster();
+            }
+        };
+
+        const applyLobbySnapshot = (sync: GameSyncState) => {
+            unmutedPlayerIdsRef.current = sync.unmutedPlayerIds;
+            setUnmutedPlayerIds(sync.unmutedPlayerIds);
+            chatMessagesRef.current = sync.chatMessages;
+            setChatMessages(sync.chatMessages);
+        };
+
         const handleMessage = (raw: unknown, from: DataConnection) => {
             if (disposed || !isLobbyMessage(raw)) return;
             const message = raw;
+            lastPongAt.set(from.peer, Date.now());
 
             switch (message.type) {
+                case "ping": {
+                    send(from, { type: "pong" });
+                    break;
+                }
+                case "pong": {
+                    break;
+                }
+                case "resync-request": {
+                    if (roleRef.current !== "host") break;
+                    if (!playersRef.current.some((player) => player.id === message.playerId)) break;
+                    sendSyncTo(from);
+                    break;
+                }
+                case "game-sync": {
+                    if (roleRef.current !== "guest") break;
+                    applyLobbySnapshot(message.sync);
+                    dispatch(message);
+                    break;
+                }
                 case "join": {
                     if (roleRef.current !== "host") break;
-                    if (!playersRef.current.some((p) => p.id === message.player.id)) {
-                        setRoster([...playersRef.current, message.player]);
-                    }
+                    const known = playersRef.current.some((p) => p.id === message.player.id);
+                    markPlayerConnected(message.player.id);
+                    if (known && handsRef.current.has(message.player.id)) sendSyncTo(from);
                     broadcastRoster();
                     break;
                 }
@@ -334,6 +608,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
                 }
                 case "leave": {
                     if (roleRef.current !== "host") break;
+                    cancelRosterGrace(message.playerId);
                     setRoster(playersRef.current.filter((p) => p.id !== message.playerId));
                     broadcastRoster();
                     break;
@@ -356,7 +631,9 @@ export function PeerProvider({ children }: { children: ReactNode }) {
                 }
                 case "chat": {
                     if (!featuresRef.current.textChat) break;
-                    setChatMessages((current) => [...current, message.message]);
+                    const next = [...chatMessagesRef.current, message.message];
+                    chatMessagesRef.current = next;
+                    setChatMessages(next);
                     if (roleRef.current === "host" && from.peer !== peer.id) {
                         for (const [id, connection] of connections) {
                             if (id !== from.peer) send(connection, message);
@@ -366,6 +643,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
                 }
                 case "start-game": {
                     if (roleRef.current === "guest") {
+                        gameStateRef.current = message.game;
                         setGameState(message.game);
                         dispatch(message);
                         navigateRef.current("/game");
@@ -407,16 +685,22 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         const registerConnection = (connection: DataConnection) => {
             const remoteId = connection.peer;
             connections.set(remoteId, connection);
+            lastPongAt.set(remoteId, Date.now());
 
             connection.on("open", () => {
-                if (disposed) return;
+                if (disposed || leavingRef.current) return;
                 if (roleRef.current === "host") {
-                    if (!playersRef.current.some((p) => p.id === remoteId)) {
-                        setRoster([...playersRef.current, { id: remoteId }]);
-                    }
+                    const wasReconnecting = reconnectingPlayers.delete(remoteId);
+                    markPlayerConnected(remoteId);
                     broadcastRoster();
+                    if (wasReconnecting || handsRef.current.has(remoteId)) sendSyncTo(connection);
                 } else if (roleRef.current === "guest") {
-                    send(connection, { type: "join", player: { id: peer.id } });
+                    send(connection, { type: "join", player: { id: assignedPeerId ?? peer.id ?? "" } });
+                    if (hostConnectionWasLive) {
+                        hostConnectionWasLive = false;
+                        send(connection, { type: "resync-request", playerId: assignedPeerId ?? "" });
+                    }
+                    onRecoverySuccess();
                 }
             });
 
@@ -424,19 +708,26 @@ export function PeerProvider({ children }: { children: ReactNode }) {
 
             connection.on("close", () => {
                 connections.delete(remoteId);
+                lastPongAt.delete(remoteId);
                 if (disposed || leavingRef.current) return;
                 if (roleRef.current === "host") {
-                    setRoster(playersRef.current.filter((p) => p.id !== remoteId));
-                    broadcastRoster();
+                    markPlayerReconnecting(remoteId);
                 } else if (remoteId === entryIdRef.current) {
-                    setError("The host left the lobby.");
-                    setStatus("disconnected");
-                    navigateRef.current("/");
+                    closeVoiceConnection(remoteId);
+                    hostConnectionWasLive = true;
+                    beginRetry();
                 }
             });
 
             connection.on("error", (err) => {
-                if (!disposed) setError(err.type);
+                if (disposed || leavingRef.current) return;
+                const type = String(err.type);
+                if (isTransientError(type)) {
+                    beginRetry();
+                } else {
+                    setStatus("error");
+                    setError(err.message || type);
+                }
             });
         };
 
@@ -444,26 +735,46 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             const nextPeer = id ? new Peer(id, peerOptions) : new Peer(peerOptions);
             peer = nextPeer;
             peerRef.current = nextPeer;
+            if (id) {
+                assignedPeerId = id;
+                sessionIdRef.current = id;
+            }
 
-            nextPeer.on("open", (id) => {
+            nextPeer.on("open", (openedId) => {
                 if (disposed || peer !== nextPeer) return;
-                setPeerId(id);
-                setStatus("connected");
+                assignedPeerId = openedId;
+                sessionIdRef.current = openedId;
+                setPeerId(openedId);
+                onRecoverySuccess();
 
                 if (featuresRef.current.voiceChat) startVoice();
 
-                const entry = entryIdRef.current;
-                if (entry) {
-                    roleRef.current = "guest";
-                    setRole("guest");
-                    setHostId(entry);
-                    registerConnection(nextPeer.connect(entry));
-                } else {
-                    roleRef.current = "host";
-                    setRole("host");
-                    setHostId(id);
-                    setRoster([{ id }]);
+                if (roleRef.current === null) {
+                    const entry = entryIdRef.current;
+                    if (entry) {
+                        roleRef.current = "guest";
+                        setRole("guest");
+                        setHostId(entry);
+                        registerConnection(nextPeer.connect(entry));
+                    } else {
+                        roleRef.current = "host";
+                        setRole("host");
+                        setHostId(openedId);
+                        setRoster([{ id: openedId, connected: true }]);
+                    }
+                    return;
                 }
+
+                // Signaling is back. P2P links may or may not have survived; refresh everything.
+                resetVoiceConnections();
+                if (roleRef.current === "host") {
+                    for (const connection of connections.values()) sendSyncTo(connection);
+                    broadcastRoster();
+                } else {
+                    hostConnectionWasLive = true;
+                }
+                recoverDataConnections();
+                syncVoiceConnections();
             });
 
             nextPeer.on("connection", (connection) => {
@@ -499,36 +810,102 @@ export function PeerProvider({ children }: { children: ReactNode }) {
                 if (disposed || peer !== nextPeer) return;
                 const errorType: string = err.type;
                 if ((errorType === "unavailable-id" || errorType === "peer-id-in-use")
-                    && !entryIdRef.current && codeAttempts < MAX_CODE_ATTEMPTS) {
+                    && !entryIdRef.current && roleRef.current === null && codeAttempts < MAX_CODE_ATTEMPTS) {
                     codeAttempts += 1;
                     // Replace first so the failed peer's close/error events are ignored.
                     createPeer(generateLobbyCode());
                     if (!nextPeer.destroyed) nextPeer.destroy();
                     return;
                 }
+                if (isTransientError(errorType)
+                    || (roleRef.current !== null && (errorType === "unavailable-id" || errorType === "peer-id-in-use"))) {
+                    beginRetry();
+                    return;
+                }
                 setStatus("error");
-                setError(err.message || err.type);
+                setError(err.message || errorType);
             });
 
             nextPeer.on("close", () => {
-                if (!disposed && peer === nextPeer) setStatus("disconnected");
+                if (!disposed && !leavingRef.current && peer === nextPeer) beginRetry();
             });
 
             nextPeer.on("disconnected", () => {
-                if (!disposed && peer === nextPeer) setStatus("disconnected");
+                if (!disposed && !leavingRef.current && peer === nextPeer) beginRetry();
             });
         };
+
+        retryNowRef.current = () => {
+            if (disposed || leavingRef.current) return;
+            retryAttempt = 0;
+            retryLoopActive = true;
+            clearRetryTimer();
+            attemptRecovery();
+            scheduleRetry();
+        };
+
+        const handleOffline = () => {
+            // Pause the retry loop; the online handler resumes it.
+            offline = true;
+            clearRetryTimer();
+        };
+
+        const handleOnline = () => {
+            offline = false;
+            if (!retryLoopActive || disposed || leavingRef.current) return;
+            retryAttempt = 0;
+            attemptRecovery();
+            scheduleRetry();
+        };
+
+        window.addEventListener("offline", handleOffline);
+        window.addEventListener("online", handleOnline);
+
+        pingTimer = window.setInterval(() => {
+            if (disposed || leavingRef.current) return;
+            const now = Date.now();
+            for (const [remoteId, connection] of [...connections]) {
+                if (!connection.open) continue;
+                if (now - (lastPongAt.get(remoteId) ?? now) > PONG_TIMEOUT_MS) {
+                    connections.delete(remoteId);
+                    lastPongAt.delete(remoteId);
+                    connection.close();
+                    if (roleRef.current === "host") {
+                        markPlayerReconnecting(remoteId);
+                    } else if (remoteId === entryIdRef.current) {
+                        closeVoiceConnection(remoteId);
+                        hostConnectionWasLive = true;
+                        beginRetry();
+                    }
+                } else {
+                    send(connection, { type: "ping" });
+                }
+            }
+        }, PING_INTERVAL_MS);
 
         createPeer(entryIdRef.current ? undefined : generateLobbyCode());
 
         return () => {
             disposed = true;
             leavingRef.current = true;
+            clearRetryTimer();
+            if (pingTimer !== null) window.clearInterval(pingTimer);
+            for (const timer of rosterGraceTimers.values()) window.clearTimeout(timer);
+            rosterGraceTimers.clear();
+            reconnectingPlayers.clear();
+            window.removeEventListener("offline", handleOffline);
+            window.removeEventListener("online", handleOnline);
+            retryNowRef.current = null;
+            syncSourceRef.current = null;
             if (!peer.destroyed) peer.destroy();
             peerRef.current = null;
             activeProposalRef.current = null;
             stopVoice();
             setChatMessages([]);
+            chatMessagesRef.current = [];
+            handsRef.current.clear();
+            sessionIdRef.current = null;
+            lastPongAt.clear();
             connections.clear();
             handlers.clear();
         };
@@ -546,11 +923,12 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         if (roleRef.current !== "host") return;
         activeProposalRef.current = null;
         // Each new game starts with fresh character names.
-        setRoster(playersRef.current.map(({ id }) => ({ id })));
+        setRoster(playersRef.current.map(({ id }) => ({ id, connected: true })));
         broadcastRoster();
         const drawnEncounters = createEncounters();
         const quest = createQuest();
         const hands = new Map(playersRef.current.map((player) => [player.id, createHand()]));
+        handsRef.current = hands;
         const ownHand = hands.get(peerRef.current?.id ?? "")!;
 
         // Each player gets their own hand; the encounters and quest are shared.
@@ -561,10 +939,10 @@ export function PeerProvider({ children }: { children: ReactNode }) {
 
         const game = createGameState(ownHand, drawnEncounters, quest);
         const message: LobbyMessage = { type: "start-game", game };
-        setGameState(game);
+        syncGameState(game);
         dispatch(message);
         navigateRef.current("/game");
-    }, [dispatch, send, setRoster, broadcastRoster]);
+    }, [dispatch, send, setRoster, broadcastRoster, syncGameState]);
 
     const leaveLobby = useCallback(() => {
         leavingRef.current = true;
@@ -660,7 +1038,9 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             text: trimmed,
             timestamp: Date.now(),
         };
-        setChatMessages((current) => [...current, chatMessage]);
+        const next = [...chatMessagesRef.current, chatMessage];
+        chatMessagesRef.current = next;
+        setChatMessages(next);
 
         const message: LobbyMessage = { type: "chat", message: chatMessage };
         if (roleRef.current === "host") {
@@ -671,6 +1051,10 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         }
     }, [broadcast, send]);
 
+    const retryNow = useCallback(() => {
+        retryNowRef.current?.();
+    }, []);
+
     const value: PeerContextValue = {
         status,
         peerId,
@@ -678,7 +1062,11 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         players,
         hostId,
         error,
+        reconnect,
+        retryNow,
         gameState,
+        syncGameState,
+        registerSyncSource,
         applyGameProgress,
         playCard,
         setCharacterName,
