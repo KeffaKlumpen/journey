@@ -18,6 +18,9 @@ function HomePage() {
 
     return (
         <main className="home">
+            <section className="home-section how-to-play">
+                <h1>JORUNEY</h1>
+            </section>
             <section className="home-section">
                 <h2>Create a lobby</h2>
                 <fieldset className="lobby-settings">
