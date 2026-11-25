@@ -1,9 +1,11 @@
 import { Link, useNavigate } from 'react-router';
 import './home.css'
 import { useState, type FormEvent } from 'react';
+import { useRandomTitleFont } from './titleFont';
 
 function HomePage() {
     const navigate = useNavigate();
+    const { fontFamily: titleFont, ready: titleFontReady } = useRandomTitleFont();
     const [peerId, setPeerId] = useState("");
     const [textChat, setTextChat] = useState(true);
     const [voiceChat, setVoiceChat] = useState(true);
@@ -19,7 +21,12 @@ function HomePage() {
     return (
         <main className="home">
             <section className="home-section how-to-play">
-                <h1>JORUNEY</h1>
+                <h1
+                    className={`home-title${titleFontReady ? '' : ' is-loading'}`}
+                    style={{ fontFamily: titleFont }}
+                >
+                    Journey
+                </h1>
             </section>
             <section className="home-section">
                 <h2>Create a lobby</h2>

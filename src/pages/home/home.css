@@ -101,6 +101,16 @@
     grid-column: 1 / -1;
 }
 
+.home-title {
+    margin: 0;
+    line-height: 1;
+    text-align: center;
+}
+
+.home-title.is-loading {
+    visibility: hidden;
+}
+
 .how-to-play ol {
     margin: 0;
     padding-left: 1.5vw;
