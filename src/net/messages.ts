@@ -107,8 +107,8 @@ export type LobbyMessage =
     | { type: "chat"; message: ChatMessage }
     | { type: "start-game"; game: GameState }
     | { type: "game-data"; payload: GameDataPayload }
-    | { type: "ping" }
-    | { type: "pong" }
+    | { type: "ping"; id: number }
+    | { type: "pong"; id: number }
     | { type: "resync-request"; playerId: string }
     | { type: "game-sync"; sync: GameSyncState };
 

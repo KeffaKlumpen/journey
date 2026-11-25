@@ -27,8 +27,11 @@ type Proposal = Omit<Extract<GameDataPayload, { kind: "card-played" }>, "kind">;
 const MAX_CODE_ATTEMPTS = 5;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const MAX_RECONNECT_DELAY_MS = 30_000;
-const PING_INTERVAL_MS = 3_000;
-const PONG_TIMEOUT_MS = 9_000;
+const MIN_HEARTBEAT_INTERVAL_MS = 5_000;
+const MAX_HEARTBEAT_INTERVAL_MS = 10_000;
+const MIN_HEARTBEAT_TIMEOUT_MS = 15_000;
+const MAX_HEARTBEAT_TIMEOUT_MS = 30_000;
+const HEARTBEAT_RTT_FACTOR = 4;
 const ROSTER_GRACE_MS = 12_000;
 
 const TRANSIENT_ERRORS = new Set([
@@ -333,7 +336,9 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         let retryLoopActive = false;
         let retryAttempt = 0;
         let reconnectTimer: number | null = null;
-        let pingTimer: number | null = null;
+        let heartbeatTimer: number | null = null;
+        let pingSequence = 0;
+        let rttEstimateMs = 0;
         let offline = typeof navigator !== "undefined" && !navigator.onLine;
         let hostConnectionWasLive = false;
 
@@ -357,6 +362,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         const connections = connectionsRef.current;
         const handlers = handlersRef.current;
         const lastPongAt = new Map<string, number>();
+        const pendingPingAt = new Map<string, { id: number; sentAt: number }>();
         const rosterGraceTimers = new Map<string, number>();
         const reconnectingPlayers = new Set<string>();
 
@@ -511,6 +517,78 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             }
         };
 
+        const heartbeatTimeoutMs = () => Math.min(
+            MAX_HEARTBEAT_TIMEOUT_MS,
+            Math.max(MIN_HEARTBEAT_TIMEOUT_MS, rttEstimateMs * HEARTBEAT_RTT_FACTOR),
+        );
+
+        const heartbeatIntervalMs = () => Math.min(
+            MAX_HEARTBEAT_INTERVAL_MS,
+            Math.max(MIN_HEARTBEAT_INTERVAL_MS, heartbeatTimeoutMs() / 3),
+        );
+
+        const recordPong = (remoteId: string, id: number) => {
+            const pending = pendingPingAt.get(remoteId);
+            if (!pending || pending.id !== id) return;
+            pendingPingAt.delete(remoteId);
+            const rtt = Date.now() - pending.sentAt;
+            if (rtt >= 0) {
+                rttEstimateMs = rttEstimateMs === 0 ? rtt : rttEstimateMs * 0.7 + rtt * 0.3;
+            }
+        };
+
+        const runHeartbeat = () => {
+            const now = Date.now();
+            const timeout = heartbeatTimeoutMs();
+            for (const [remoteId, connection] of [...connections]) {
+                if (!connection.open) continue;
+                if (now - (lastPongAt.get(remoteId) ?? now) > timeout) {
+                    connections.delete(remoteId);
+                    lastPongAt.delete(remoteId);
+                    pendingPingAt.delete(remoteId);
+                    connection.close();
+                    if (roleRef.current === "host") {
+                        markPlayerReconnecting(remoteId);
+                    } else if (remoteId === entryIdRef.current) {
+                        closeVoiceConnection(remoteId);
+                        hostConnectionWasLive = true;
+                        beginRetry();
+                    }
+                } else {
+                    const id = ++pingSequence;
+                    pendingPingAt.set(remoteId, { id, sentAt: now });
+                    send(connection, { type: "ping", id });
+                }
+            }
+        };
+
+        const scheduleHeartbeat = (delayMs?: number) => {
+            if (heartbeatTimer !== null) window.clearTimeout(heartbeatTimer);
+            if (disposed || leavingRef.current) return;
+            heartbeatTimer = window.setTimeout(() => {
+                heartbeatTimer = null;
+                if (disposed || leavingRef.current || document.visibilityState === "hidden") return;
+                runHeartbeat();
+                scheduleHeartbeat();
+            }, delayMs ?? heartbeatIntervalMs());
+        };
+
+        const handleVisibilityChange = () => {
+            if (disposed || leavingRef.current) return;
+            if (document.visibilityState === "hidden") {
+                if (heartbeatTimer !== null) {
+                    window.clearTimeout(heartbeatTimer);
+                    heartbeatTimer = null;
+                }
+                return;
+            }
+            // Give everyone a fresh window instead of counting time spent hidden.
+            const now = Date.now();
+            for (const remoteId of connections.keys()) lastPongAt.set(remoteId, now);
+            pendingPingAt.clear();
+            scheduleHeartbeat(0);
+        };
+
         const attemptRecovery = () => {
             if (disposed || leavingRef.current) return;
             const current = peerRef.current;
@@ -552,6 +630,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
                         connection.close();
                         connections.delete(remoteId);
                         lastPongAt.delete(remoteId);
+                        pendingPingAt.delete(remoteId);
                         markPlayerReconnecting(remoteId);
                     }
                 }
@@ -573,10 +652,11 @@ export function PeerProvider({ children }: { children: ReactNode }) {
 
             switch (message.type) {
                 case "ping": {
-                    send(from, { type: "pong" });
+                    send(from, { type: "pong", id: message.id });
                     break;
                 }
                 case "pong": {
+                    recordPong(from.peer, message.id);
                     break;
                 }
                 case "resync-request": {
@@ -709,6 +789,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             connection.on("close", () => {
                 connections.delete(remoteId);
                 lastPongAt.delete(remoteId);
+                pendingPingAt.delete(remoteId);
                 if (disposed || leavingRef.current) return;
                 if (roleRef.current === "host") {
                     markPlayerReconnecting(remoteId);
@@ -860,28 +941,9 @@ export function PeerProvider({ children }: { children: ReactNode }) {
 
         window.addEventListener("offline", handleOffline);
         window.addEventListener("online", handleOnline);
+        document.addEventListener("visibilitychange", handleVisibilityChange);
 
-        pingTimer = window.setInterval(() => {
-            if (disposed || leavingRef.current) return;
-            const now = Date.now();
-            for (const [remoteId, connection] of [...connections]) {
-                if (!connection.open) continue;
-                if (now - (lastPongAt.get(remoteId) ?? now) > PONG_TIMEOUT_MS) {
-                    connections.delete(remoteId);
-                    lastPongAt.delete(remoteId);
-                    connection.close();
-                    if (roleRef.current === "host") {
-                        markPlayerReconnecting(remoteId);
-                    } else if (remoteId === entryIdRef.current) {
-                        closeVoiceConnection(remoteId);
-                        hostConnectionWasLive = true;
-                        beginRetry();
-                    }
-                } else {
-                    send(connection, { type: "ping" });
-                }
-            }
-        }, PING_INTERVAL_MS);
+        if (document.visibilityState !== "hidden") scheduleHeartbeat();
 
         createPeer(entryIdRef.current ? undefined : generateLobbyCode());
 
@@ -889,12 +951,13 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             disposed = true;
             leavingRef.current = true;
             clearRetryTimer();
-            if (pingTimer !== null) window.clearInterval(pingTimer);
+            if (heartbeatTimer !== null) window.clearTimeout(heartbeatTimer);
             for (const timer of rosterGraceTimers.values()) window.clearTimeout(timer);
             rosterGraceTimers.clear();
             reconnectingPlayers.clear();
             window.removeEventListener("offline", handleOffline);
             window.removeEventListener("online", handleOnline);
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
             retryNowRef.current = null;
             syncSourceRef.current = null;
             if (!peer.destroyed) peer.destroy();
@@ -906,6 +969,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             handsRef.current.clear();
             sessionIdRef.current = null;
             lastPongAt.clear();
+            pendingPingAt.clear();
             connections.clear();
             handlers.clear();
         };
