@@ -46,7 +46,10 @@ export type GameDataPayload =
         successes: number;
         currentEncounterIndex: number;
         gameOver: boolean;
-    };
+    }
+    | { kind: "quest-failed" }
+    | { kind: "quest-failed-done"; playerId: string }
+    | { kind: "quest-failed-complete" };
 
 export type GameProposal = {
     proposalId: string;
@@ -84,10 +87,15 @@ export type SyncResult = {
     };
 };
 
+export type QuestFailedState = {
+    done: string[];
+};
+
 /** Everything a guest needs to resume a session after a network interruption. */
 export type GameSyncState = {
     game: GameState | null;
     prep: { step: number; done: string[]; complete: boolean };
+    questFailed: QuestFailedState | null;
     proposal: GameProposal | null;
     votes: GameVote[];
     result: SyncResult | null;
@@ -135,6 +143,9 @@ export function isGameDataPayload(value: unknown): value is GameDataPayload {
         kind === "card-vote" ||
         kind === "vote-result" ||
         kind === "roll-request" ||
-        kind === "dice-result"
+        kind === "dice-result" ||
+        kind === "quest-failed" ||
+        kind === "quest-failed-done" ||
+        kind === "quest-failed-complete"
     );
 }

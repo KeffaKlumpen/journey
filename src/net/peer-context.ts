@@ -25,6 +25,7 @@ export type PeerContextValue = {
     registerSyncSource: (source: () => GameSyncState | null) => () => void;
     applyGameProgress: (progress: Pick<GameState, "successes" | "currentEncounterIndex">) => void;
     playCard: (card: Action) => void;
+    everyoneOutOfCards: () => boolean;
     setCharacterName: (characterName: string) => void;
     clearCharacterName: (playerId: string) => void;
     isMuted: boolean;

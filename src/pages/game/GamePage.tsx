@@ -9,6 +9,7 @@ import {
     VOTE_OPTIONS,
     type GameSyncState,
     type Player,
+    type QuestFailedState,
     type VoteOption,
 } from "../../net/messages";
 import AudioControls from "../components/AudioControls";
@@ -22,6 +23,7 @@ import PrepPhase from "../components/PrepPhase";
 import QuestSidebar, { type ActionAttempt, type PassedEncounter } from "../components/QuestSidebar";
 import ResultPopup, { type DiceRoll } from "../components/ResultPopup";
 import GameOverPopup from "../components/GameOverPopup";
+import QuestFailedPopup from "../components/QuestFailedPopup";
 import "./game.css";
 
 type Proposal = {
@@ -65,7 +67,7 @@ function decideResult(votes: Vote[]): VoteOption {
 }
 
 function GamePage() {
-    const { gameState, players, peerId, hostId, role, features, subscribe, sendGameData, applyGameProgress, syncGameState, registerSyncSource, proposeCard, playCard, setCharacterName: submitCharacterName, clearCharacterName } = usePeer();
+    const { gameState, players, peerId, hostId, role, features, subscribe, sendGameData, applyGameProgress, syncGameState, registerSyncSource, proposeCard, playCard, everyoneOutOfCards, setCharacterName: submitCharacterName, clearCharacterName } = usePeer();
     const navigate = useNavigate();
     const [proposal, setProposal] = useState<Proposal | null>(null);
     const [votes, setVotes] = useState<Vote[]>([]);
@@ -75,6 +77,8 @@ function GamePage() {
     const [prepStep, setPrepStep] = useState(0);
     const [prepDone, setPrepDone] = useState<string[]>([]);
     const [prepComplete, setPrepComplete] = useState(false);
+    const [questFailed, setQuestFailed] = useState<QuestFailedState | null>(null);
+    const [questFailedComplete, setQuestFailedComplete] = useState(false);
     const [passedEncounters, setPassedEncounters] = useState<PassedEncounter[]>([]);
     const [characterNameInput, setCharacterNameInput] = useState("");
 
@@ -84,6 +88,8 @@ function GamePage() {
     const prepStepRef = useRef(0);
     const prepDoneRef = useRef<string[]>([]);
     const prepCompleteRef = useRef(false);
+    const questFailedRef = useRef<QuestFailedState | null>(null);
+    const questFailedCompleteRef = useRef(false);
     const proposalRef = useRef<Proposal | null>(null);
     const votesRef = useRef<Vote[]>([]);
     const hasVotedRef = useRef(false);
@@ -145,6 +151,36 @@ function GamePage() {
         setResult(next);
     };
 
+    const setQuestFailedState = (next: QuestFailedState | null) => {
+        questFailedRef.current = next;
+        setQuestFailed(next);
+    };
+
+    const setQuestFailedCompleteState = (next: boolean) => {
+        questFailedCompleteRef.current = next;
+        setQuestFailedComplete(next);
+    };
+
+    const tryCompleteQuestFailed = useCallback(() => {
+        if (role !== "host" || questFailedCompleteRef.current) return;
+        const failure = questFailedRef.current;
+        if (!failure) return;
+        const currentPlayers = playersRef.current;
+        if (currentPlayers.length === 0) return;
+        if (!currentPlayers.every((player) => failure.done.includes(player.id))) return;
+
+        setQuestFailedCompleteState(true);
+        sendGameData({ kind: "quest-failed-complete" });
+    }, [role, sendGameData]);
+
+    useEffect(() => {
+        tryCompleteQuestFailed();
+    }, [players, tryCompleteQuestFailed]);
+
+    useEffect(() => {
+        if (questFailedComplete) navigate("/lobby");
+    }, [questFailedComplete, navigate]);
+
     const buildSyncState = useCallback((): GameSyncState | null => {
         const game = gameStateRef.current;
         if (!game) return null;
@@ -157,6 +193,9 @@ function GamePage() {
                 done: prepDoneRef.current,
                 complete: prepCompleteRef.current,
             },
+            questFailed: questFailedRef.current
+                ? { done: [...questFailedRef.current.done] }
+                : null,
             proposal: proposal
                 ? { proposalId: proposal.id, proposerId: proposal.proposerId, card: proposal.card as Action }
                 : null,
@@ -230,6 +269,10 @@ function GamePage() {
             setPrepDone(prepDoneRef.current);
             prepCompleteRef.current = sync.prep.complete;
             setPrepComplete(sync.prep.complete);
+            setQuestFailedState(sync.questFailed
+                ? { done: [...sync.questFailed.done] }
+                : null);
+            setQuestFailedCompleteState(false);
             currentAttemptsRef.current = sync.currentAttempts;
             passedEncountersRef.current = sync.passedEncounters;
             setPassedEncounters(sync.passedEncounters);
@@ -389,6 +432,10 @@ function GamePage() {
                 currentEncounterIndex: resolution.currentEncounterIndex,
                 gameOver: resolution.gameOver,
             });
+            // Wait for the final roll before deciding: that card may still clear the encounter.
+            if (!resolution.gameOver && everyoneOutOfCards()) {
+                sendGameData({ kind: "quest-failed" });
+            }
             return;
         }
 
@@ -440,9 +487,32 @@ function GamePage() {
                 },
             });
         }
+
+        if (payload.kind === "quest-failed") {
+            if (questFailedRef.current) return;
+            pendingRollRef.current = null;
+            clearProposal();
+            resetRoll();
+            setResultState(null);
+            setQuestFailedState({ done: [] });
+            return;
+        }
+
+        if (payload.kind === "quest-failed-done") {
+            const failure = questFailedRef.current;
+            if (!failure || failure.done.includes(payload.playerId)) return;
+            setQuestFailedState({ done: [...failure.done, payload.playerId] });
+            tryCompleteQuestFailed();
+            return;
+        }
+
+        if (payload.kind === "quest-failed-complete") {
+            setQuestFailedCompleteState(true);
+            return;
+        }
     }), [
         subscribe, role, peerId, sendGameData, applyGameProgress, syncGameState,
-        playCard, tryAdvancePrep, decideVoteIfComplete,
+        playCard, everyoneOutOfCards, tryAdvancePrep, decideVoteIfComplete, tryCompleteQuestFailed,
     ]);
 
     const handlePrepDone = (characterName?: string) => {
@@ -483,6 +553,16 @@ function GamePage() {
             proposalId: result.id,
             proposerId: peerId ?? "",
         });
+    };
+
+    const handleQuestFailedDone = () => {
+        const id = peerId;
+        const failure = questFailedRef.current;
+        if (!id || !failure || failure.done.includes(id)) return;
+        // Guests don't receive an echo of their own acknowledgement, so record it locally too.
+        setQuestFailedState({ done: [...failure.done, id] });
+        sendGameData({ kind: "quest-failed-done", playerId: id });
+        tryCompleteQuestFailed();
     };
 
     const handleBackToLobby = () => {
@@ -557,7 +637,15 @@ function GamePage() {
                 totalEncounters={gameState.encounters.length}
                 hint={hint}
             />
-            {result?.roll?.gameOver ? (
+            {questFailed ? (
+                <QuestFailedPopup
+                    questTitle={gameState.quest.title}
+                    donePlayers={questFailed.done}
+                    players={players}
+                    peerId={peerId}
+                    onDone={handleQuestFailedDone}
+                />
+            ) : result?.roll?.gameOver ? (
                 <GameOverPopup
                     card={result.card}
                     result={result.result}

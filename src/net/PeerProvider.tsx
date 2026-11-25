@@ -318,6 +318,13 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         });
     }, []);
 
+    // The host owns every player's hand, so only it can tell when all of them are empty.
+    const everyoneOutOfCards = useCallback(() => {
+        const currentPlayers = playersRef.current;
+        return currentPlayers.length > 0 && currentPlayers.every((player) =>
+            (handsRef.current.get(player.id)?.length ?? 1) === 0);
+    }, []);
+
     useEffect(() => {
         let disposed = false;
 
@@ -397,6 +404,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             return {
                 game: game && hand ? { ...game, hand } : game,
                 prep: snapshot?.prep ?? { step: 0, done: [], complete: false },
+                questFailed: snapshot?.questFailed ?? null,
                 proposal: snapshot?.proposal ?? null,
                 votes: snapshot?.votes ?? [],
                 result: snapshot?.result ?? null,
@@ -1133,6 +1141,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         registerSyncSource,
         applyGameProgress,
         playCard,
+        everyoneOutOfCards,
         setCharacterName,
         clearCharacterName,
         isMuted,
