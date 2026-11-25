@@ -10,10 +10,13 @@ import { useNavigate, useSearchParams } from "react-router";
 import type { Action } from "../game/card-data";
 import { type GameState } from "../game/game-state";
 import { createEncounters, createGameState, createHand, createQuest } from "../game/rules";
+import { generateLobbyCode, normalizeLobbyCode } from "./lobby-code";
 import { isLobbyMessage, type ChatMessage, type GameDataPayload, type LobbyFeatures, type LobbyMessage, type Player } from "./messages";
 import { PeerContext, type PeerContextValue, type Role, type Status } from "./peer-context";
 
 type Proposal = Omit<Extract<GameDataPayload, { kind: "card-played" }>, "kind">;
+
+const MAX_CODE_ATTEMPTS = 5;
 
 function featureEnabled(value: string | null): boolean {
     return value !== "0";
@@ -23,7 +26,8 @@ export function PeerProvider({ children }: { children: ReactNode }) {
     const navigate = useNavigate();
     const navigateRef = useRef(navigate);
     const [searchParams] = useSearchParams();
-    const entryId = searchParams.get("entry");
+    const rawEntryId = searchParams.get("entry");
+    const entryId = rawEntryId ? normalizeLobbyCode(rawEntryId) : null;
     const entryIdRef = useRef<string | null>(entryId);
     const [features, setFeatures] = useState<LobbyFeatures>(() => entryId
         ? { textChat: false, voiceChat: false }
@@ -253,7 +257,7 @@ export function PeerProvider({ children }: { children: ReactNode }) {
         activeProposalRef.current = null;
         voiceStartedRef.current = false;
 
-        const peer = new Peer({
+        const peerOptions = {
             host: import.meta.env.VITE_PEER_HOST || "0.peerjs.com",
             port: Number(import.meta.env.VITE_PEER_PORT || 443),
             path: import.meta.env.VITE_PEER_PATH || "/",
@@ -268,8 +272,10 @@ export function PeerProvider({ children }: { children: ReactNode }) {
                     },
                 ],
             },
-        });
-        peerRef.current = peer;
+        };
+
+        let peer: Peer;
+        let codeAttempts = 0;
 
         const connections = connectionsRef.current;
         const handlers = handlersRef.current;
@@ -434,69 +440,86 @@ export function PeerProvider({ children }: { children: ReactNode }) {
             });
         };
 
-        peer.on("open", (id) => {
-            if (disposed) return;
-            setPeerId(id);
-            setStatus("connected");
+        const createPeer = (id?: string) => {
+            const nextPeer = id ? new Peer(id, peerOptions) : new Peer(peerOptions);
+            peer = nextPeer;
+            peerRef.current = nextPeer;
 
-            if (featuresRef.current.voiceChat) startVoice();
+            nextPeer.on("open", (id) => {
+                if (disposed || peer !== nextPeer) return;
+                setPeerId(id);
+                setStatus("connected");
 
-            const entry = entryIdRef.current;
-            if (entry) {
-                roleRef.current = "guest";
-                setRole("guest");
-                setHostId(entry);
-                registerConnection(peer.connect(entry));
-            } else {
-                roleRef.current = "host";
-                setRole("host");
-                setHostId(id);
-                setRoster([{ id }]);
-            }
-        });
+                if (featuresRef.current.voiceChat) startVoice();
 
-        peer.on("connection", (connection) => {
-            if (disposed) return;
-            if (roleRef.current === "host") {
-                registerConnection(connection);
-            } else {
-                connection.close();
-            }
-        });
+                const entry = entryIdRef.current;
+                if (entry) {
+                    roleRef.current = "guest";
+                    setRole("guest");
+                    setHostId(entry);
+                    registerConnection(nextPeer.connect(entry));
+                } else {
+                    roleRef.current = "host";
+                    setRole("host");
+                    setHostId(id);
+                    setRoster([{ id }]);
+                }
+            });
 
-        peer.on("call", (call) => {
-            if (disposed) return;
-            if (featuresKnownRef.current && !featuresRef.current.voiceChat) {
-                call.close();
-                return;
-            }
-            const remoteId = call.peer;
-            if (mediaConnectionsRef.current.has(remoteId) || pendingCallsRef.current.has(remoteId)) {
-                closeVoiceConnection(remoteId);
-            }
-            const stream = localStreamRef.current;
-            if (!stream) {
-                pendingCallsRef.current.set(remoteId, call);
-                call.on("close", () => pendingCallsRef.current.delete(remoteId));
-                return;
-            }
-            call.answer(stream);
-            registerMediaConnection(remoteId, call);
-        });
+            nextPeer.on("connection", (connection) => {
+                if (disposed || peer !== nextPeer) return;
+                if (roleRef.current === "host") {
+                    registerConnection(connection);
+                } else {
+                    connection.close();
+                }
+            });
 
-        peer.on("error", (err) => {
-            if (disposed) return;
-            setStatus("error");
-            setError(err.message || err.type);
-        });
+            nextPeer.on("call", (call) => {
+                if (disposed || peer !== nextPeer) return;
+                if (featuresKnownRef.current && !featuresRef.current.voiceChat) {
+                    call.close();
+                    return;
+                }
+                const remoteId = call.peer;
+                if (mediaConnectionsRef.current.has(remoteId) || pendingCallsRef.current.has(remoteId)) {
+                    closeVoiceConnection(remoteId);
+                }
+                const stream = localStreamRef.current;
+                if (!stream) {
+                    pendingCallsRef.current.set(remoteId, call);
+                    call.on("close", () => pendingCallsRef.current.delete(remoteId));
+                    return;
+                }
+                call.answer(stream);
+                registerMediaConnection(remoteId, call);
+            });
 
-        peer.on("close", () => {
-            if (!disposed) setStatus("disconnected");
-        });
+            nextPeer.on("error", (err) => {
+                if (disposed || peer !== nextPeer) return;
+                const errorType: string = err.type;
+                if ((errorType === "unavailable-id" || errorType === "peer-id-in-use")
+                    && !entryIdRef.current && codeAttempts < MAX_CODE_ATTEMPTS) {
+                    codeAttempts += 1;
+                    // Replace first so the failed peer's close/error events are ignored.
+                    createPeer(generateLobbyCode());
+                    if (!nextPeer.destroyed) nextPeer.destroy();
+                    return;
+                }
+                setStatus("error");
+                setError(err.message || err.type);
+            });
 
-        peer.on("disconnected", () => {
-            if (!disposed) setStatus("disconnected");
-        });
+            nextPeer.on("close", () => {
+                if (!disposed && peer === nextPeer) setStatus("disconnected");
+            });
+
+            nextPeer.on("disconnected", () => {
+                if (!disposed && peer === nextPeer) setStatus("disconnected");
+            });
+        };
+
+        createPeer(entryIdRef.current ? undefined : generateLobbyCode());
 
         return () => {
             disposed = true;

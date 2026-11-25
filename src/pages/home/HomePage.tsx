@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router';
 import './home.css'
 import { useState, type FormEvent } from 'react';
+import { normalizeLobbyCode } from '../../net/lobby-code';
 import { useRandomTitleFont } from './titleFont';
 
 function HomePage() {
@@ -15,7 +16,7 @@ function HomePage() {
     const handleJoin = (event: FormEvent) => {
         event.preventDefault();
         if (!trimmedId) return;
-        navigate({ pathname: '/lobby', search: `?entry=${encodeURIComponent(trimmedId)}` });
+        navigate({ pathname: '/lobby', search: `?entry=${encodeURIComponent(normalizeLobbyCode(trimmedId))}` });
     };
 
     return (
@@ -57,13 +58,13 @@ function HomePage() {
             <section className="home-section">
                 <h2>Join a lobby</h2>
                 <form className="join-form" onSubmit={handleJoin}>
-                    <label htmlFor="host-id">Host peer ID</label>
+                    <label htmlFor="host-id">Lobby code</label>
                     <input
                         id="host-id"
                         type="text"
                         value={peerId}
                         onChange={(event) => setPeerId(event.target.value)}
-                        placeholder="Enter the host's ID"
+                        placeholder="Enter the 6-character code"
                     />
                     <button className="home-button" type="submit" disabled={!trimmedId}>Join lobby</button>
                 </form>
@@ -72,7 +73,7 @@ function HomePage() {
             <section className="home-section how-to-play">
                 <h2>How to play</h2>
                 <ol>
-                    <li>Create a lobby and share your peer ID with the other players.</li>
+                    <li>Create a lobby and share your lobby code or invite link with the other players.</li>
                     <li>Everyone joins with that ID, then prepares the quest together.</li>
                     <li>On your turn, play an action card. The others vote, and you roll the dice.</li>
                     <li>Gain enough successes to pass each encounter and finish the main quest.</li>

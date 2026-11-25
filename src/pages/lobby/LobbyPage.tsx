@@ -28,10 +28,10 @@ function LobbyPage() {
             {error && <p className="error">{error}</p>}
             {peerId ? (
                 <div>
-                    <p>Your peer ID: {peerId}</p>
-                    {isHost && (
+                    {isHost ? (
                         <>
-                            <p>Share this ID with the players you want to invite.</p>
+                            <p>Lobby code: <strong>{peerId}</strong></p>
+                            <p>Share this code or the invite link with the players you want to invite.</p>
                             <button className="copy-link-button" onClick={handleCopyLink}>
                                 {copyStatus === 'copied'
                                     ? 'Link copied!'
@@ -40,7 +40,7 @@ function LobbyPage() {
                                         : 'Copy invite link'}
                             </button>
                         </>
-                    )}
+                    ) : <p>Your peer ID: {peerId}</p>}
                 </div>
             ) : <p>Connecting...</p>}
             {!isHost && hostId && <p>Joining lobby: {hostId}</p>}
